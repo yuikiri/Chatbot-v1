@@ -1,0 +1,23 @@
+services:
+  chatbot-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatbot_v1_app
+    ports:
+      - "${PORT:-10000}:10000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - PORT=10000
+      - LLM__Provider=${LLM_PROVIDER:-gemini}
+      - LLM__BaseUrl=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
+      - LLM__ApiKey=${LLM_API_KEY:-}
+      - LLM__Model=${LLM_MODEL:-gemini-3.5-flash-lite}
+      - LLM__EmbeddingModel=${LLM_EMBEDDING_MODEL:-gemini-embedding-001}
+      - Admin__SecretKey=${ADMIN_SECRET_KEY:-123123123}
+      - Storage__DocumentsPath=/app/data/documents
+      - Storage__DbPath=/app/data/index/knowledge.db
+    volumes:
+      - ./src/Chatbot.Be/data/documents:/app/data/documents
+      - ./src/Chatbot.Be/data/index:/app/data/index
+    restart: unless-stopped

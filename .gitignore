@@ -1,0 +1,42 @@
+# Build results
+bin/
+obj/
+dist/
+build/
+out/
+
+# Environments and Secrets
+.env
+.env.local
+.env.*.local
+*.local
+appsettings.Development.json
+appsettings.Production.json
+appsettings.json
+# Dependencies
+node_modules/
+packages/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Database and uploaded storage in local dev
+*.db
+*.db-shm
+*.db-wal
+Chatbot.Data/index/*.db
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
+
+# Logs and diagnostics
+*.log
+logs/
