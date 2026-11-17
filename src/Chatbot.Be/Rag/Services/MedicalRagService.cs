@@ -328,19 +328,48 @@ public class MedicalRagService
 
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "cho", "con", "bú", "bu", "uống", "uong", "được", "duoc", "không", "khong", "k", "ko", "dc", "hok",
-        "thế", "the", "nào", "nao", "dùng", "dung", "sử", "su", "dụng", "có", "co", "bị", "bi",
-        "khi", "đang", "dang", "mẹ", "me", "bé", "be", "trẻ", "tre", "sơ", "so", "sinh", "nhỏ", "nho",
-        "sao", "bao", "nhiêu", "nhieu", "thuốc", "thuoc", "loại", "loai", "hỏi", "hoi", "về", "ve",
-        "giúp", "giup", "tôi", "toi", "em", "ạ", "a", "nhé", "nhe", "xin", "chào", "chao", "với", "voi",
-        "là", "la", "gì", "gi", "như", "nhu", "cần", "can", "lưu", "luu", "ý", "y", "thời", "thoi",
-        "điểm", "diem", "tác", "tac", "dụng", "dung", "phụ", "phu", "liều", "lieu", "lượng", "luong",
-        "an", "toàn", "toan", "mức", "muc", "độ", "do", "ở", "o", "trong", "và", "va", "hoặc", "hoac",
-        "hay", "nên", "nen", "phải", "phai", "làm", "lam", "thì", "thi", "tại", "tai", "lâu", "lau",
-        "chữa", "chua", "trị", "tri", "sau", "trước", "truoc", "cữ", "cu", "người", "nguoi",
-        "này", "nay", "đó", "bác", "bac", "sĩ", "si", "dược", "duoc", "khuyên", "khuyen",
-        "hết", "het", "bệnh", "benh", "đau", "dau", "sốt", "sot", "cảm", "cam", "cúm", "cum",
-        "ho", "họng", "hong", "bụng", "bung", "viêm", "viem", "mệt", "met", "dị", "di", "ứng", "ung"
+        // Đại từ, xưng hô
+        "tôi", "toi", "tao", "tớ", "to", "mình", "minh", "em", "anh", "chị", "chi", "cô", "co", "bác", "bac", "chú", "chu",
+        "mẹ", "me", "bé", "be", "con", "trẻ", "tre", "sơ", "so", "sinh", "nhỏ", "nho", "bà", "ba", "ông", "ong",
+        "người", "nguoi", "bệnh", "benh", "nhân", "nhan", "bác", "sĩ", "si", "dược", "duoc",
+
+        // Động từ giao tiếp, mong muốn, hành động
+        "muốn", "muon", "mong", "hỏi", "hoi", "tìm", "tim", "kiếm", "kiem", "tra", "cứu", "cuu", "xem", "đọc", "doc",
+        "biết", "biet", "hiểu", "hieu", "thấy", "thay", "nghe", "nói", "noi", "bảo", "bao", "chỉ", "chi", "dạy", "day",
+        "hướng", "huong", "dẫn", "dan", "giải", "giai", "thích", "thich", "tư", "tu", "vấn", "van", "khuyên", "khuyen",
+        "giúp", "giup", "được", "duoc", "không", "khong", "k", "ko", "dc", "hok", "nha", "nhé", "nhe", "ạ", "a",
+        "xin", "chào", "chao", "alo", "hi", "hello", "hey",
+
+        // Động từ y tế chung
+        "uống", "uong", "dùng", "dung", "sử", "su", "dụng", "tiêm", "tiem", "truyền", "truyen", "bôi", "boi",
+        "nhỏ", "nho", "xịt", "xit", "chữa", "chua", "trị", "tri", "điều", "dieu", "khỏi", "khoi", "bớt", "bot",
+        "hết", "het", "bú", "bu", "cho", "nuôi", "nuoi", "ti",
+
+        // Trợ từ, liên từ, câu hỏi
+        "có", "co", "là", "la", "thì", "thi", "mà", "ma", "hay", "hoặc", "hoac", "nếu", "neu", "vì", "vi", "do",
+        "nên", "nen", "phải", "phai", "cần", "can", "làm", "lam", "sao", "thế", "the", "nào", "nao", "gì", "gi",
+        "ai", "đâu", "dau", "mấy", "may", "bao", "nhiêu", "nhieu", "khi", "lúc", "luc", "sau", "trước", "truoc",
+        "trong", "ngoài", "ngoai", "khoảng", "khoang", "tầm", "tam", "cỡ", "co", "với", "voi", "tại", "tai",
+        "ở", "o", "về", "ve", "ra", "vào", "vao", "lên", "len", "xuống", "xuong", "lại", "lai", "đi", "di",
+        "đến", "den", "tới", "toi", "từ", "tu", "và", "va", "cũng", "cung", "rồi", "roi", "chưa", "chua",
+        "đã", "da", "đang", "dang", "sẽ", "se", "này", "nay", "đó", "do", "kia", "đây", "day",
+
+        // Từ ngữ chỉ lượng & đơn vị
+        "thuốc", "thuoc", "loại", "loai", "dạng", "dang", "viên", "vien", "gói", "goi", "chai", "lọ", "lo",
+        "ống", "ong", "giọt", "giot", "liều", "lieu", "lượng", "luong", "hàm", "ham", "cữ", "cu", "lần", "lan",
+        "ngày", "ngay", "giờ", "gio", "tiếng", "tieng", "tuần", "tuan", "tháng", "thang", "năm", "nam",
+        "mức", "muc", "độ", "do", "thời", "thoi", "điểm", "diem",
+
+        // Từ ngữ tính chất chung
+        "tác", "tac", "dụng", "dung", "phụ", "phu", "nguy", "hiểm", "hiem", "hại", "hai", "ảnh", "anh",
+        "hưởng", "huong", "độc", "doc", "tính", "tinh", "an", "toàn", "toan", "tốt", "tot", "xấu", "xau",
+        "hiệu", "hieu", "quả", "qua",
+
+        // Triệu chứng chung (không phải tên thuốc)
+        "đau", "dau", "sốt", "sot", "cảm", "cam", "cúm", "cum", "ho", "họng", "hong", "đầu", "dau",
+        "bụng", "bung", "viêm", "viem", "mệt", "met", "dị", "di", "ứng", "ung", "nổi", "noi", "mề", "me",
+        "đay", "day", "ngứa", "ngua", "sổ", "so", "mũi", "mui", "nghẹt", "nghet", "chảy", "chay",
+        "tiêu", "tieu", "nôn", "non", "trớ", "tro", "quấy", "quay", "khóc", "khoc", "ngủ", "ngu"
     };
 
     private static List<string> ExtractDistinctiveKeywords(string query)
@@ -350,7 +379,7 @@ public class MedicalRagService
 
         var rawTokens = query
             .ToLowerInvariant()
-            .Split(new[] { ' ', ',', '.', '?', '!', ';', ':', '-', '(', ')', '[', ']', '/', '\\', '"', '\'' }, 
+            .Split(new[] { ' ', ',', '.', '?', '!', ';', ':', '-', '(', ')', '[', ']', '/', '\\', '"', '\'', '\n', '\r', '\t' }, 
                    StringSplitOptions.RemoveEmptyEntries);
 
         var list = new List<string>();
@@ -369,7 +398,7 @@ public class MedicalRagService
     {
         if (distinctiveKeywords == null || distinctiveKeywords.Count == 0)
         {
-            return true;
+            return false; // Nếu không có từ khóa hoạt chất/tên thuốc cụ thể nào, KHÔNG tự ý gán bừa tài liệu
         }
 
         var chunkText = (chunk.DocumentName + " " + chunk.Content).ToLowerInvariant();

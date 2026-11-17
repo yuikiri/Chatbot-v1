@@ -209,7 +209,21 @@ app.MapGet("/api/documents/{id}", async (string id, IDocumentRepository repo) =>
     var doc = await repo.GetDocumentByIdAsync(id);
     if (doc == null) return Results.NotFound(new { error = "Không tìm thấy tài liệu" });
 
-    string text = await DocumentTextParser.ExtractTextAsync(doc.FilePath);
+    string targetPath = doc.FilePath;
+    if (!File.Exists(targetPath))
+    {
+        var candidate1 = Path.Combine(docsPath, $"{doc.Id}_{doc.FileName}");
+        var candidate2 = Path.Combine(docsPath, doc.FileName);
+        var candidate3 = Directory.Exists(docsPath)
+            ? Directory.GetFiles(docsPath, $"*{doc.Id}*").FirstOrDefault()
+            : null;
+
+        if (File.Exists(candidate1)) targetPath = candidate1;
+        else if (File.Exists(candidate2)) targetPath = candidate2;
+        else if (!string.IsNullOrEmpty(candidate3) && File.Exists(candidate3)) targetPath = candidate3;
+    }
+
+    string text = await DocumentTextParser.ExtractTextAsync(targetPath);
     return Results.Ok(new
     {
         id = doc.Id,

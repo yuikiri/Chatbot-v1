@@ -1,7 +1,17 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import type { CitationItem, DocumentDetail } from "../services/api";
 import { getDocumentDetail } from "../services/api";
-import { X, BookOpen, Loader2, ExternalLink, Globe, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { marked } from "marked";
+import { 
+  X, 
+  Loader2, 
+  ExternalLink, 
+  Globe, 
+  ShieldCheck, 
+  CheckCircle2, 
+  Target,
+  FileText
+} from "lucide-react";
 
 interface Props {
   citation: CitationItem | null;
@@ -12,7 +22,6 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const highlightRef = useRef<HTMLElement>(null);
 
   const docId = citation?.documentId || (citation as any)?.DocumentId || "";
   const docName = citation?.documentName || (citation as any)?.DocumentName || "Tài liệu";
@@ -53,11 +62,19 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
       });
   }, [citation, isExternal, docId]);
 
+  const scrollToHighlight = () => {
+    const el = document.getElementById("citation-highlight-target");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+
   useEffect(() => {
-    if (doc && highlightRef.current) {
-      setTimeout(() => {
-        highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 150);
+    if (doc) {
+      const timer = setTimeout(() => {
+        scrollToHighlight();
+      }, 250);
+      return () => clearTimeout(timer);
     }
   }, [doc]);
 
@@ -71,67 +88,131 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
 
   const sourceUrl = citation.url || (doc ? extractSourceUrl(doc.content) : null);
 
-  const renderContentWithHighlight = (content: string, start: number, end: number) => {
-    if (!content || start < 0 || end > content.length || start >= end) {
-      return <span>{content}</span>;
+  // Chuẩn hóa văn bản thành CHUNG FORM (dễ nhìn, bất kể là TXT hay MD) và chèn thẻ BÔI ĐẬM
+  const renderFormattedDocumentWithHighlight = (content: string) => {
+    if (!content) return "";
+
+    const raw = content.replace(/\r\n/g, "\n");
+    let startIdx = startOffset;
+    let endIdx = endOffset;
+
+    // Tìm chính xác vị trí của đoạn trích dẫn (snippet) trong văn bản
+    if (citation.snippet && citation.snippet.trim().length > 15) {
+      const cleanSnippet = citation.snippet.trim().replace(/\r\n/g, "\n");
+      const foundIdx = raw.indexOf(cleanSnippet);
+      if (foundIdx !== -1) {
+        startIdx = foundIdx;
+        endIdx = foundIdx + cleanSnippet.length;
+      } else {
+        // Fallback: Tìm theo 45 ký tự đầu của snippet
+        const head = cleanSnippet.slice(0, Math.min(45, cleanSnippet.length));
+        const headIdx = raw.indexOf(head);
+        if (headIdx !== -1) {
+          startIdx = headIdx;
+          endIdx = Math.min(raw.length, headIdx + cleanSnippet.length);
+        }
+      }
     }
 
-    const before = content.slice(0, start);
-    const highlighted = content.slice(start, end);
-    const after = content.slice(end);
+    // Chèn marker vào vị trí trích dẫn
+    const MARK_START = "[[[HIGHLIGHT_START]]]";
+    const MARK_END = "[[[HIGHLIGHT_END]]]";
 
-    return (
-      <div className="whitespace-pre-wrap font-sans text-gray-800 text-sm leading-relaxed">
-        <span>{before}</span>
-        <mark
-          ref={highlightRef}
-          className="bg-yellow-200 text-gray-900 font-bold px-1 py-0.5 rounded border border-yellow-400 shadow-sm transition-all"
-        >
-          {highlighted}
-        </mark>
-        <span>{after}</span>
-      </div>
-    );
+    let markedText = raw;
+    if (startIdx >= 0 && endIdx > startIdx && endIdx <= raw.length) {
+      markedText = raw.slice(0, startIdx) + MARK_START + raw.slice(startIdx, endIdx) + MARK_END + raw.slice(endIdx);
+    }
+
+    // Chuẩn hóa định dạng chung ("chung form" cho cả txt và md)
+    // 1. Biến các dòng thông tin trường thuộc tính viết hoa thành Markdown in đậm
+    markedText = markedText.replace(/^(TÊN HOẠT CHẤT|TÊN BIỆT DƯỢC PHỔ BIẾN|NHÓM THUỐC|MỨC ĐỘ AN TOÀN CHO CON BÚ|TIÊU ĐỀ|NGUỒN TRÍCH DẪN|TÁC GIẢ|NGÀY TẢI LÊN):\s*(.+)$/gim,
+      "**$1:** $2\n");
+
+    // 2. Biến các tiêu đề mục lớn viết hoa thành Heading cấp 3 Markdown
+    markedText = markedText.replace(/^(TỔNG QUAN Y VĂN|DƯỢC ĐỘNG HỌC & BÀI TIẾT VÀO SỮA|DƯỢC ĐỘNG HỌC & BÀI TIẾT|TÁC DỤNG PHỤ Ở TRẺ BÚ MẸ|LƯU Ý QUAN TRỌNG KHI SỬ DỤNG|LƯU Ý QUAN TRỌNG|NGUỒN TRÍCH DẪN|NỘI DUNG|TỔNG QUAN|CHỈ ĐỊNH|CHỐNG CHỈ ĐỊNH|LIỀU DÙNG):\s*$/gim,
+      "\n### $1\n");
+
+    // 3. Render qua thư viện Markdown (marked)
+    let html = marked.parse(markedText, { breaks: true }) as string;
+
+    // 4. Thay thế marker thành thẻ <mark> bôi đậm màu vàng nổi bật kèm ID để scroll
+    const highlightTag = `<mark id="citation-highlight-target" class="bg-amber-200/95 text-gray-950 font-semibold px-2 py-1 rounded-lg border-2 border-amber-400 shadow-md ring-4 ring-amber-300/40 inline-block my-1 leading-relaxed animate-pulse-subtle">`;
+    html = html.replace(MARK_START, highlightTag).replace(MARK_END, "</mark>");
+
+    return html;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden border border-gray-100">
-        {/* Header */}
-        <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-200 ${isExternal ? "bg-indigo-50" : "bg-teal-50"}`}>
-          <div className="flex items-center space-x-3">
-            <div className={`p-2 text-white rounded-xl shadow-xs ${isExternal ? "bg-indigo-600" : "bg-teal-600"}`}>
-              {isExternal ? <Globe className="w-5 h-5" /> : <BookOpen className="w-5 h-5" />}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+        {/* Header Modal */}
+        <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-200 ${isExternal ? "bg-indigo-50/80" : "bg-teal-50/80"}`}>
+          <div className="flex items-center space-x-3 truncate">
+            <div className={`p-2.5 text-white rounded-xl shadow-xs shrink-0 ${isExternal ? "bg-indigo-600" : "bg-teal-600"}`}>
+              {isExternal ? <Globe className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
             </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <span>{docName}</span>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+            <div className="truncate">
+              <h3 className="text-base font-bold text-gray-900 flex flex-wrap items-center gap-2">
+                <span className="truncate max-w-xs sm:max-w-md">{docName}</span>
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${
                   isExternal 
                     ? "bg-indigo-100 text-indigo-800 border border-indigo-200" 
                     : "bg-teal-100 text-teal-800 border border-teal-200"
                 }`}>
-                  {isExternal ? "Nguồn y tế quốc tế đã kiểm chứng" : "Trích dẫn tài liệu nội bộ"}
+                  {isExternal ? "Nguồn y tế quốc tế đã kiểm chứng" : "Tài liệu nội bộ đã kiểm duyệt"}
                 </span>
               </h3>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 mt-0.5">
                 {isExternal 
                   ? `Cơ quan kiểm chứng: ${verifiedOrg || "Tổ chức y tế chính thống"} | Độ tin cậy: ${(relevanceScore * 100).toFixed(0)}%`
-                  : `Vị trí ký tự: ${startOffset} - ${endOffset} | Độ khớp: ${(relevanceScore * 100).toFixed(1)}%`}
+                  : `Vị trí ký tự: ${startOffset} - ${endOffset} | Độ khớp y văn: ${(relevanceScore * 100).toFixed(1)}%`}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition"
+            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200/80 rounded-xl transition shrink-0 ml-2"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Nội dung xem chi tiết */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
-          {/* TRƯỜNG HỢP NGUỒN NGOÀI INTERNET (EXTERNAL VERIFIED SOURCE) */}
+        {/* Thanh công cụ thao tác nhanh cho tài liệu nội bộ */}
+        {!isExternal && doc && (
+          <div className="px-6 py-2.5 bg-amber-50/60 border-b border-amber-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-amber-900 font-medium">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+              <span>Đoạn bôi đậm màu vàng bên dưới là căn cứ trả lời của Bot</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={scrollToHighlight}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-bold rounded-lg border border-amber-300 shadow-2xs transition"
+              >
+                <Target className="w-3.5 h-3.5 text-amber-700" />
+                <span>Cuộn đến đoạn trích dẫn</span>
+              </button>
+
+              {sourceUrl && (
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg shadow-2xs transition"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Trang web gốc</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Thân hiển thị tài liệu dạng "Chung form" chuẩn mực */}
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+          {/* NGUỒN EXTERNAL INTERNET */}
           {isExternal ? (
             <div className="space-y-4">
               <div className="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm space-y-4">
@@ -181,12 +262,12 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
               </div>
             </div>
           ) : (
-            /* TRƯỜNG HỢP NGUỒN TÀI LIỆU NỘI BỘ (INTERNAL DOCUMENT HIGHLIGHT) */
+            /* TÀI LIỆU NỘI BỘ (CHUNG FORM CHO CẢ TXT VÀ MD) */
             <>
               {loading && (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-500 gap-3">
+                <div className="flex flex-col items-center justify-center py-20 text-gray-500 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-                  <p className="text-sm">Đang tải và định vị đoạn trích dẫn y khoa...</p>
+                  <p className="text-sm font-medium">Đang tải và định dạng toàn văn tài liệu y khoa...</p>
                 </div>
               )}
 
@@ -197,33 +278,19 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
               )}
 
               {!loading && !error && doc && (
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs space-y-4">
-                  <div className="pb-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <span className="text-xs text-gray-400 font-mono">
-                      Mã tài liệu: {doc.id}
-                    </span>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 font-medium">
-                        Đoạn bôi đậm màu vàng bên dưới là căn cứ trả lời của Bot
-                      </span>
-
-                      {sourceUrl && (
-                        <a
-                          href={sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-md transition shadow-2xs shrink-0"
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          <span>Trang web gốc</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
+                <div className="bg-white p-7 rounded-2xl border border-gray-200 shadow-xs space-y-4">
+                  <div className="pb-3 border-b border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                    <span className="font-mono">Mã tài liệu: {doc.id}</span>
+                    <span>Dung lượng: {(doc.fileSizeBytes / 1024).toFixed(1)} KB</span>
                   </div>
 
-                  {renderContentWithHighlight(doc.content, startOffset, endOffset)}
+                  {/* VĂN BẢN ĐÃ ĐƯỢC CHUYỂN THÀNH CHUNG FORM ĐẸP MẮT VÀ BÔI ĐẬM CĂN CỨ */}
+                  <div
+                    className="prose prose-sm max-w-none text-gray-800 leading-relaxed [&_h3]:text-teal-900 [&_h3]:font-bold [&_h3]:text-base [&_h3]:border-b [&_h3]:border-teal-100/80 [&_h3]:pb-1.5 [&_h3]:mt-6 [&_h3]:mb-3 [&_p]:my-2 [&_p]:leading-relaxed [&_ul]:my-2 [&_li]:my-1 [&_strong]:text-gray-900"
+                    dangerouslySetInnerHTML={{
+                      __html: renderFormattedDocumentWithHighlight(doc.content)
+                    }}
+                  />
                 </div>
               )}
             </>
@@ -231,17 +298,17 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
-          <div className="text-xs text-gray-500">
+        <div className="px-6 py-3.5 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+          <div className="text-xs text-gray-500 truncate max-w-md">
             {sourceUrl ? (
-              <span className="truncate max-w-md inline-block">Nguồn: {sourceUrl}</span>
+              <span className="truncate">Nguồn trích dẫn: {sourceUrl}</span>
             ) : (
-              <span>Tài liệu nội bộ đã kiểm duyệt</span>
+              <span>Tài liệu nội bộ đã được thẩm định an toàn dược lý</span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-semibold rounded-xl transition"
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold rounded-xl transition"
           >
             Đóng
           </button>

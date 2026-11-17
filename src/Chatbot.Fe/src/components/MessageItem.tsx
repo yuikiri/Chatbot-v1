@@ -6,11 +6,9 @@ import {
   ShieldCheck, 
   Shield, 
   BookOpen, 
-  Globe, 
-  ExternalLink,
-  Scale,
-  Sparkles,
-  AlertTriangle
+  Scale, 
+  Sparkles, 
+  AlertTriangle 
 } from "lucide-react";
 
 interface Props {
@@ -139,7 +137,13 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
   const parsedHtml = marked.parse(mainText, { breaks: true }) as string;
   const parsedDisclaimerHtml = disclaimerText ? (marked.parse(disclaimerText, { breaks: true }) as string) : null;
 
-  const showCitations = !isUser && !isRefusal && message.citations && message.citations.length > 0;
+  // Chỉ hiển thị thanh trích dẫn khi THỰC SỰ có tài liệu nội bộ trong kho khớp với câu trả lời
+  const internalCitations = (message.citations || []).filter((c) => {
+    const docId = c.documentId || (c as any).DocumentId;
+    return docId && !String(docId).startsWith("ext_");
+  });
+
+  const showCitations = !isUser && !isRefusal && internalCitations.length > 0;
 
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-4`}>
@@ -166,42 +170,22 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
           dangerouslySetInnerHTML={{ __html: parsedHtml }}
         />
 
-        {/* Căn cứ trích dẫn: Phân biệt rõ Tài liệu nội bộ vs Nguồn kiểm chứng Internet */}
+        {/* Căn cứ trích dẫn: Chỉ hiển thị khi THỰC SỰ có tài liệu nội bộ trong kho */}
         {showCitations && (
           <div className="mt-4 pt-3 border-t border-gray-100">
             <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
               <BookOpen className="w-3.5 h-3.5 text-teal-600" />
-              <span>Căn cứ trích dẫn y văn kiểm chứng:</span>
+              <span>Căn cứ tài liệu nội bộ đã kiểm duyệt:</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {message.citations!.map((c) => {
+              {internalCitations.map((c) => {
                 const docName = c.documentName || (c as any).DocumentName || "Tài liệu";
                 const score = c.relevanceScore ?? (c as any).RelevanceScore ?? 0;
                 const srcType = c.sourceType || (c as any).SourceType || "internal";
                 const url = c.url || (c as any).Url;
                 const docId = c.documentId || (c as any).DocumentId;
-                const isExt = srcType === "external" || Boolean(url && (!docId || String(docId).startsWith("ext_")));
                 const citeKey = c.citationId || (c as any).CitationId || docName;
 
-                // Nếu là nguồn Internet có URL -> Nút bấm link trực tiếp mở tab mới
-                if (isExt && url) {
-                  return (
-                    <a
-                      key={citeKey}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200 transition shadow-2xs hover:scale-102 cursor-pointer no-underline"
-                      title={`Truy cập nguồn kiểm chứng ${docName} trên website chính thức (Mở tab mới)`}
-                    >
-                      <Globe className="w-3 h-3 text-indigo-600 shrink-0" />
-                      <span className="font-bold">[{docName}]</span>
-                      <ExternalLink className="w-2.5 h-2.5 opacity-70 text-indigo-600" />
-                    </a>
-                  );
-                }
-
-                // Nếu là tài liệu nội bộ -> Nút bấm mở Modal bôi đậm văn bản gốc
                 return (
                   <button
                     key={citeKey}
