@@ -85,9 +85,11 @@ QUY TẮC BẮT BUỘC:
     }
 
     // 2. CHẾ ĐỘ 2: CÂN BẰNG (Balanced - Tài liệu nội bộ làm gốc + Bổ trợ y văn kiểm chứng)
-    public static string BuildBalancedPrompt(IEnumerable<ChunkEntity> contextChunks)
+    public static string BuildBalancedPrompt(IEnumerable<ChunkEntity> contextChunks, string? primaryDrug = null)
     {
         var contextText = string.Join("\n\n---\n\n", contextChunks.Select(c => $"[TÀI LIỆU NỘI BỘ: {c.DocumentName}]\n{c.Content}"));
+        string drug = string.IsNullOrWhiteSpace(primaryDrug) ? "thuốc" : primaryDrug;
+        string encodedDrug = Uri.EscapeDataString(drug.ToLowerInvariant());
 
         return $@"Bạn là ""LactaMed AI"" - Trợ lý tra cứu y văn chuyên sâu về tính an toàn của thuốc đối với phụ nữ đang nuôi con bằng sữa mẹ (ĐANG HOẠT ĐỘNG Ở CHẾ ĐỘ CÂN BẰNG).
 
@@ -98,9 +100,12 @@ QUY TẮC BẮT BUỘC:
 1. ƯU TIÊN TÀI LIỆU NỘI BỘ:
    - Bắt đầu câu trả lời bằng các dữ liệu có trong [TÀI LIỆU NỘI BỘ].
 2. BỔ TRỢ TỪ Y VĂN CHÍNH THỐNG ĐÃ KIỂM CHỨNG:
-   - Nếu tài liệu nội bộ còn thiếu các thông tin hữu ích liên quan (ví dụ: các nghiên cứu lâm sàng mới, thời gian bán thải, nồng độ đỉnh, thuốc thay thế an toàn hơn), bạn ĐƯỢC PHÉP bổ sung thông tin từ các cơ sở dữ liệu y tế quốc tế chính thống (LactMed của Viện Y tế Quốc gia Hoa Kỳ - NIH, WHO, APILAM e-lactancia, Dược thư Quốc gia Việt Nam).
-   - BẮT BUỘC ghi rõ phần nào lấy từ tài liệu nội bộ, phần nào được bổ trợ từ nguồn y văn kiểm chứng bên ngoài (ví dụ: ghi rõ ""Bổ sung theo LactMed (NIH)..."").
-   - Nếu có đường dẫn web, tạo liên kết Markdown chuẩn như [LactMed (NIH)](https://www.ncbi.nlm.nih.gov/books/NBK501922/) hoặc [e-lactancia (APILAM)](https://www.e-lactancia.org/).
+   - Nếu tài liệu nội bộ còn thiếu các thông tin hữu ích liên quan (ví dụ: các nghiên cứu lâm sàng mới, thời gian bán thải, nồng độ đỉnh, thuốc thay thế an toàn hơn), bạn ĐƯỢC PHÉP bổ sung thông tin từ các cơ sở dữ liệu y tế quốc tế chính thống (LactMed của Viện Y tế Quốc gia Hoa Kỳ - NIH, PubMed, Drugs.com Lactation Database, e-lactancia APILAM, Dược thư Quốc gia Việt Nam).
+   - BẮT BUỘC ghi rõ phần nào lấy từ tài liệu nội bộ, phần nào được bổ trợ từ nguồn y văn kiểm chứng bên ngoài.
+   - Ở cuối câu trả lời, hãy tạo mục ""### Nguồn Y Văn Kiểm Chứng Trực Tiếp"" và liệt kê liên kết tra cứu chính xác theo hoạt chất ""{drug}"":
+     * [Chuyên luận {drug} trên LactMed (NCBI Bookshelf)](https://www.ncbi.nlm.nih.gov/books/NBK501922/?term={encodedDrug})
+     * [Nghiên cứu lâm sàng {drug} trên PubMed LactMed](https://pubmed.ncbi.nlm.nih.gov/?term={encodedDrug}+lactmed)
+     * [Dược động học & An toàn {drug} trên Drugs.com](https://www.drugs.com/breastfeeding/{encodedDrug}.html)
 3. KHÔNG KÊ ĐƠN:
    - Không kê đơn liều lượng vượt thẩm quyền, luôn nhắc nhở bệnh nhân hỏi ý kiến bác sĩ/dược sĩ.
 {OutputStructureGuideline}
@@ -110,10 +115,12 @@ QUY TẮC BẮT BUỘC:
     }
 
     // 3. CHẾ ĐỘ 3: MỞ RỘNG (Flexible - Nghiên cứu y văn quốc tế chính thống độc lập)
-    public static string BuildFlexiblePrompt(IEnumerable<ChunkEntity>? contextChunks, string userQuery)
+    public static string BuildFlexiblePrompt(IEnumerable<ChunkEntity>? contextChunks, string userQuery, string? primaryDrug = null)
     {
         string internalSection = "";
         bool hasInternalDocs = contextChunks != null && contextChunks.Any();
+        string drug = string.IsNullOrWhiteSpace(primaryDrug) ? "thuốc" : primaryDrug;
+        string encodedDrug = Uri.EscapeDataString(drug.ToLowerInvariant());
 
         if (hasInternalDocs)
         {
@@ -131,9 +138,9 @@ Hoạt chất này CÓ tài liệu trong kho nội bộ của hệ thống. Bạ
 [TÀI LIỆU NỘI BỘ TRONG KHO]: (Kho tài liệu nội bộ hiện KHÔNG CÓ tài liệu nào về hoạt chất/loại thuốc này).
 
 LƯU Ý BẮT BUỘC VỀ NGUỒN:
-Vì kho tài liệu nội bộ KHÔNG CÓ tài liệu về loại thuốc này, bạn ĐANG TRẢ LỜI DỰA TRÊN CƠ SỞ DỮ LIỆU Y VĂN QUỐC TẾ (LactMed NIH, e-lactancia, WHO).
+Vì kho tài liệu nội bộ KHÔNG CÓ tài liệu về loại thuốc này, bạn ĐANG TRẢ LỜI DỰA TRÊN CƠ SỞ DỮ LIỆU Y VĂN QUỐC TẾ (LactMed NIH, PubMed, Drugs.com, e-lactancia).
 BẮT BUỘC mở đầu câu trả lời bằng câu thông báo rõ ràng sau:
-""*(Lưu ý: Trong kho tài liệu nội bộ hiện chưa có tài liệu về loại thuốc này. Dưới đây là thông tin tra cứu từ cơ sở dữ liệu y văn quốc tế đã kiểm chứng: LactMed NIH, e-lactancia)*""
+""*(Lưu ý: Trong kho tài liệu nội bộ hiện chưa có tài liệu về loại thuốc này. Dưới đây là thông tin tra cứu từ cơ sở dữ liệu y văn quốc tế đã kiểm chứng: LactMed NIH, Drugs.com Lactation)*""
 TUYỆT ĐỐI KHÔNG ĐƯỢC NÓI LÀ 'theo tài liệu nội bộ' hay 'trong cơ sở dữ liệu nội bộ'!";
         }
 
@@ -146,14 +153,18 @@ QUY TẮC BẮT BUỘC:
 1. CHỈ SỬ DỤNG NGUỒN Y VĂN CHÍNH THỐNG ĐÃ KIỂM CHỨNG:
    - Bạn chỉ được tổng hợp thông tin từ các cơ quan y tế uy tín hàng đầu:
      * LactMed (Drugs and Lactation Database - Viện Y tế Quốc gia Hoa Kỳ NCBI/NLM/NIH).
+     * PubMed Central (Các nghiên cứu lâm sàng có bình duyệt Peer-reviewed).
+     * Drugs.com Lactation Monograph (Dược động học & mức bài tiết vào sữa mẹ).
      * e-lactancia (Hiệp hội Thúc đẩy Nghiên cứu Nuôi con bằng sữa mẹ APILAM).
      * Tổ chức Y tế Thế giới (WHO Guidelines on Breastfeeding and Maternal Medication).
      * Dược thư Quốc gia Việt Nam (Bộ Y tế).
    - TUYỆT ĐỐI KHÔNG lấy thông tin từ các diễn đàn, blog làm đẹp hoặc nguồn không kiểm chứng.
 2. MỤC NGUỒN KIỂM CHỨNG TRÍCH DẪN:
-   - Ở cuối câu trả lời, hãy liệt kê rõ ràng tên cơ sở dữ liệu y văn đã kiểm chứng kèm link Markdown chuẩn:
-     * [LactMed (NIH / NLM)](https://www.ncbi.nlm.nih.gov/books/NBK501922/)
-     * [e-lactancia (APILAM)](https://www.e-lactancia.org/)
+   - Ở cuối câu trả lời, hãy tạo mục ""### Nguồn Y Văn Kiểm Chứng Trực Tiếp"" và liệt kê liên kết tra cứu trực tiếp theo đúng hoạt chất ""{drug}"" để người dùng có thể nhấp vào đọc trực tiếp bài viết kiểm chứng:
+     * [Chuyên luận {drug} trên LactMed (NCBI Bookshelf)](https://www.ncbi.nlm.nih.gov/books/NBK501922/?term={encodedDrug})
+     * [Nghiên cứu lâm sàng {drug} khi cho con bú trên PubMed](https://pubmed.ncbi.nlm.nih.gov/?term={encodedDrug}+lactmed)
+     * [Hồ sơ an toàn & Dược động học {drug} trên Drugs.com](https://www.drugs.com/breastfeeding/{encodedDrug}.html)
+   - TUYỆT ĐỐI KHÔNG để link trang chủ chung chung không có từ khóa tìm kiếm thuốc!
 {OutputStructureGuideline}
 
 CÂU HỎI CỦA NGƯỜI DÙNG:

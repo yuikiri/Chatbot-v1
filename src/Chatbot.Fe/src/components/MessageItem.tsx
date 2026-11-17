@@ -6,6 +6,8 @@ import {
   ShieldCheck, 
   Shield, 
   BookOpen, 
+  Globe,
+  ExternalLink,
   Scale, 
   Sparkles, 
   AlertTriangle 
@@ -137,13 +139,22 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
   const parsedHtml = marked.parse(mainText, { breaks: true }) as string;
   const parsedDisclaimerHtml = disclaimerText ? (marked.parse(disclaimerText, { breaks: true }) as string) : null;
 
-  // Chỉ hiển thị thanh trích dẫn khi THỰC SỰ có tài liệu nội bộ trong kho khớp với câu trả lời
+  // Phân định rõ tài liệu nội bộ và nguồn kiểm chứng bên ngoài
   const internalCitations = (message.citations || []).filter((c) => {
     const docId = c.documentId || (c as any).DocumentId;
-    return docId && !String(docId).startsWith("ext_");
+    const srcType = c.sourceType || (c as any).SourceType;
+    return srcType !== "external" && docId && !String(docId).startsWith("ext_");
   });
 
-  const showCitations = !isUser && !isRefusal && internalCitations.length > 0;
+  const externalCitations = (message.citations || []).filter((c) => {
+    const docId = c.documentId || (c as any).DocumentId;
+    const srcType = c.sourceType || (c as any).SourceType;
+    const url = c.url || (c as any).Url;
+    return srcType === "external" || (url && (!docId || String(docId).startsWith("ext_")));
+  });
+
+  const showInternal = !isUser && !isRefusal && internalCitations.length > 0;
+  const showExternal = !isUser && !isRefusal && externalCitations.length > 0;
 
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-4`}>
@@ -162,7 +173,7 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
           </div>
         )}
 
-        {/* Nội dung Markdown chính có style riêng cho 4 phần và Hộp lưu ý Callout */}
+        {/* Nội dung Markdown chính có style riêng cho các phần và Hộp lưu ý Callout */}
         <div
           className={`prose prose-sm max-w-none leading-relaxed ${
             isUser ? "prose-invert text-white" : "text-gray-800"
@@ -170,48 +181,85 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
           dangerouslySetInnerHTML={{ __html: parsedHtml }}
         />
 
-        {/* Căn cứ trích dẫn: Chỉ hiển thị khi THỰC SỰ có tài liệu nội bộ trong kho */}
-        {showCitations && (
-          <div className="mt-4 pt-3 border-t border-gray-100">
-            <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5 text-teal-600" />
-              <span>Căn cứ tài liệu nội bộ đã kiểm duyệt:</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {internalCitations.map((c) => {
-                const docName = c.documentName || (c as any).DocumentName || "Tài liệu";
-                const score = c.relevanceScore ?? (c as any).RelevanceScore ?? 0;
-                const srcType = c.sourceType || (c as any).SourceType || "internal";
-                const url = c.url || (c as any).Url;
-                const docId = c.documentId || (c as any).DocumentId;
-                const citeKey = c.citationId || (c as any).CitationId || docName;
+        {/* Căn cứ trích dẫn: Phân định rõ Tài liệu nội bộ vs Nguồn đối soát quốc tế trực tiếp */}
+        {(showInternal || showExternal) && (
+          <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
+            {/* Nhóm 1: Tài liệu nội bộ (Bấm vào mở Pop-up bôi đậm) */}
+            {showInternal && (
+              <div>
+                <div className="text-xs font-semibold text-teal-800 mb-2 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-teal-600" />
+                  <span>Căn cứ tài liệu nội bộ đã kiểm duyệt:</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {internalCitations.map((c) => {
+                    const docName = c.documentName || (c as any).DocumentName || "Tài liệu";
+                    const score = c.relevanceScore ?? (c as any).RelevanceScore ?? 0;
+                    const srcType = c.sourceType || (c as any).SourceType || "internal";
+                    const url = c.url || (c as any).Url;
+                    const docId = c.documentId || (c as any).DocumentId;
+                    const citeKey = c.citationId || (c as any).CitationId || docName;
 
-                return (
-                  <button
-                    key={citeKey}
-                    onClick={() => onOpenCitation({
-                      ...c,
-                      documentId: docId,
-                      documentName: docName,
-                      relevanceScore: score,
-                      sourceType: srcType,
-                      url: url,
-                      startOffset: c.startOffset ?? (c as any).StartOffset ?? 0,
-                      endOffset: c.endOffset ?? (c as any).EndOffset ?? 0,
-                      snippet: c.snippet || (c as any).Snippet || ""
-                    })}
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-200 transition shadow-2xs hover:scale-102 cursor-pointer"
-                    title="Nhấp để mở tài liệu nội bộ và bôi đậm vị trí căn cứ này"
-                  >
-                    <BookOpen className="w-3 h-3 text-teal-600 shrink-0" />
-                    <span className="font-bold">[{docName}]</span>
-                    <span className="text-[10px] text-teal-600 opacity-80">
-                      ({(score * 100).toFixed(0)}%)
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                    return (
+                      <button
+                        key={citeKey}
+                        onClick={() => onOpenCitation({
+                          ...c,
+                          documentId: docId,
+                          documentName: docName,
+                          relevanceScore: score,
+                          sourceType: srcType,
+                          url: url,
+                          startOffset: c.startOffset ?? (c as any).StartOffset ?? 0,
+                          endOffset: c.endOffset ?? (c as any).EndOffset ?? 0,
+                          snippet: c.snippet || (c as any).Snippet || ""
+                        })}
+                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-200 transition shadow-2xs hover:scale-102 cursor-pointer"
+                        title="Nhấp để mở tài liệu nội bộ và bôi đậm vị trí căn cứ này"
+                      >
+                        <BookOpen className="w-3 h-3 text-teal-600 shrink-0" />
+                        <span className="font-bold">[{docName}]</span>
+                        <span className="text-[10px] text-teal-600 opacity-80">
+                          ({(score * 100).toFixed(0)}%)
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Nhóm 2: Nguồn đối soát y văn quốc tế (Link tìm kiếm / chuyên luận trực tiếp) */}
+            {showExternal && (
+              <div>
+                <div className="text-xs font-semibold text-indigo-900 mb-2 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Nguồn tra cứu y văn kiểm chứng trực tiếp (Mở tab mới):</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {externalCitations.map((c) => {
+                    const docName = c.documentName || (c as any).DocumentName || "Nguồn ngoài";
+                    const url = c.url || (c as any).Url;
+                    const citeKey = c.citationId || (c as any).CitationId || docName;
+
+                    return (
+                      <a
+                        key={citeKey}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border-indigo-200 transition shadow-2xs hover:scale-102 cursor-pointer no-underline"
+                        title={`Mở trang tra cứu bài viết ${docName} trên tab mới`}
+                      >
+                        <Globe className="w-3 h-3 text-indigo-600 shrink-0" />
+                        <span className="font-bold">[{docName}]</span>
+                        <ExternalLink className="w-2.5 h-2.5 text-indigo-600 opacity-70" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
