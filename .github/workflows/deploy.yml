@@ -37,29 +37,13 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # Đồng bộ tệp docker-compose.yml lên VPS vào thư mục ~/yuikiri/chatbot_v1
-      - name: Copy docker-compose.yml to VPS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
-          source: 'docker-compose.yml'
-          target: '~/yuikiri/chatbot_v1'
-
       - name: Execute Deploy Script on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
+          host: ${{ secrets.VPS_HOST || secrets.HOST }}
+          username: ${{ secrets.VPS_USERNAME || secrets.USERNAME || 'yuikiri' }}
+          password: ${{ secrets.VPS_PASSWORD || secrets.PASSWORD || secrets.VPS_PASS }}
+          port: ${{ secrets.VPS_PORT || secrets.PORT || 22 }}
           script: |
             cd ~/yuikiri/chatbot_v1 || exit 1
 
@@ -75,12 +59,8 @@ jobs:
               DC="docker-compose"
             fi
 
-            # Kéo image mới nhất từ Docker Hub về
+            # 1. Kéo duy nhất image mới của chatbot từ Docker Hub về
             $DC pull chatbot-app
 
-            # Dừng container cũ và khởi động container mới (sử dụng cấu hình từ file .env có sẵn trên VPS)
-            $DC down
-            $DC up -d
-
-            # Dọn dẹp images cũ không dùng để tiết kiệm dung lượng đĩa
-            docker image prune -f
+            # 2. Khởi động lại duy nhất container chatbot-app mà không ảnh hưởng bất kỳ container nào khác
+            $DC up -d --no-deps chatbot-app
