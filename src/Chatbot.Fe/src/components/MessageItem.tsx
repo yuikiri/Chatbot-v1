@@ -47,7 +47,7 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
           <ShieldCheck className="w-3 h-3 text-teal-600" />
-          <span>Nghiêm ngặt (Tài liệu nội bộ)</span>
+          <span>Tiêu chuẩn Cơ sở</span>
         </span>
       );
     }
@@ -55,7 +55,7 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
           <Scale className="w-3 h-3 text-blue-600" />
-          <span>Cân bằng (Tài liệu + Bổ trợ)</span>
+          <span>Tổng hợp Lâm sàng</span>
         </span>
       );
     }
@@ -63,7 +63,7 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
           <Sparkles className="w-3 h-3 text-indigo-600" />
-          <span>Mở rộng (Nghiên cứu y văn)</span>
+          <span>Tra cứu Quốc tế</span>
         </span>
       );
     }
@@ -184,12 +184,12 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
         {/* Căn cứ trích dẫn: Phân định rõ Tài liệu nội bộ vs Nguồn đối soát quốc tế trực tiếp */}
         {(showInternal || showExternal) && (
           <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
-            {/* Nhóm 1: Tài liệu nội bộ (Bấm vào mở Pop-up bôi đậm) */}
+            {/* Nhóm 1: Chuyên luận cơ sở (Bấm vào mở Pop-up bôi đậm) */}
             {showInternal && (
               <div>
                 <div className="text-xs font-semibold text-teal-800 mb-2 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-teal-600" />
-                  <span>Căn cứ tài liệu nội bộ đã kiểm duyệt:</span>
+                  <span>Chuyên luận thẩm định cơ sở:</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {internalCitations.map((c) => {
@@ -215,12 +215,12 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
                           snippet: c.snippet || (c as any).Snippet || ""
                         })}
                         className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-200 transition shadow-2xs hover:scale-102 cursor-pointer"
-                        title="Nhấp để mở tài liệu nội bộ và bôi đậm vị trí căn cứ này"
+                        title="Nhấp để xem toàn văn chuyên luận y khoa và đoạn căn cứ được bôi đậm"
                       >
                         <BookOpen className="w-3 h-3 text-teal-600 shrink-0" />
                         <span className="font-bold">[{docName}]</span>
                         <span className="text-[10px] text-teal-600 opacity-80">
-                          ({(score * 100).toFixed(0)}%)
+                          ({(score * 100).toFixed(0)}% tương thích)
                         </span>
                       </button>
                     );
@@ -229,12 +229,12 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
               </div>
             )}
 
-            {/* Nhóm 2: Nguồn đối soát y văn quốc tế (Link tìm kiếm / chuyên luận trực tiếp) */}
+            {/* Nhóm 2: Nguồn đối soát y văn quốc tế (Link bài viết chuyên luận thật) */}
             {showExternal && (
               <div>
                 <div className="text-xs font-semibold text-indigo-900 mb-2 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Nguồn tra cứu y văn kiểm chứng trực tiếp (Mở tab mới):</span>
+                  <span>Chuyên luận y khoa quốc tế xác thực (Mở bài viết gốc ↗):</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {externalCitations.map((c) => {
@@ -249,7 +249,7 @@ export const MessageItem: React.FC<Props> = ({ message, onOpenCitation }) => {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 font-medium rounded-lg border bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border-indigo-200 transition shadow-2xs hover:scale-102 cursor-pointer no-underline"
-                        title={`Mở trang tra cứu bài viết ${docName} trên tab mới`}
+                        title={`Mở trực tiếp bài viết chuyên luận lâm sàng ${docName} trên tab mới`}
                       >
                         <Globe className="w-3 h-3 text-indigo-600 shrink-0" />
                         <span className="font-bold">[{docName}]</span>

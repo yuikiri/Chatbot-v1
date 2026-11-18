@@ -13,6 +13,7 @@ out/
 appsettings.Development.json
 appsettings.Production.json
 appsettings.json
+
 # Dependencies
 node_modules/
 packages/
@@ -26,6 +27,8 @@ __pycache__/
 *.db-shm
 *.db-wal
 Chatbot.Data/index/*.db
+src/Chatbot.Be/data/index/*.db
+graphify-out/
 
 # IDE and Editor files
 .vscode/

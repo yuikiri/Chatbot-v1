@@ -82,22 +82,22 @@ export const ChatArea: React.FC<Props> = ({
 
   const modeDescriptions: Record<RagMode, { label: string; desc: string; icon: any; color: string; bgColor: string }> = {
     strict: {
-      label: "Nghiêm ngặt",
-      desc: "100% tài liệu nội bộ, không có thì từ chối",
+      label: "Tiêu chuẩn Cơ sở",
+      desc: "Chỉ tra cứu phác đồ y khoa đã được thẩm định sẵn tại cơ sở",
       icon: ShieldCheck,
       color: "text-teal-700",
       bgColor: "bg-teal-50 border-teal-300 text-teal-800"
     },
     balanced: {
-      label: "Cân bằng",
-      desc: "Tài liệu nội bộ làm gốc + Bổ trợ y văn kiểm chứng",
+      label: "Tổng hợp Lâm sàng",
+      desc: "Kết hợp danh mục cơ sở và các nghiên cứu y khoa quốc tế uy tín",
       icon: Scale,
       color: "text-blue-700",
       bgColor: "bg-blue-50 border-blue-300 text-blue-800"
     },
     flexible: {
-      label: "Mở rộng",
-      desc: "Tự do nghiên cứu y văn quốc tế chính thống (LactMed/WHO)",
+      label: "Tra cứu Quốc tế",
+      desc: "Tra cứu trực tiếp từ Thư viện Dược lý Lâm sàng Hoa Kỳ (LactMed NIH, WHO)",
       icon: Sparkles,
       color: "text-indigo-700",
       bgColor: "bg-indigo-50 border-indigo-300 text-indigo-800"
@@ -206,7 +206,7 @@ export const ChatArea: React.FC<Props> = ({
           <form onSubmit={handleSubmit} className="flex items-center gap-2 relative">
             <input
               type="text"
-              placeholder="Hỏi về hoạt chất, tên biệt dược (ví dụ: Paracetamol, Hapacol, ho, sốt...)"
+              placeholder="Nhập tên thuốc, hoạt chất hoặc triệu chứng cần tư vấn cho mẹ và bé..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isStreaming}
@@ -219,7 +219,7 @@ export const ChatArea: React.FC<Props> = ({
                 type="button"
                 onClick={() => setShowModeMenu(!showModeMenu)}
                 className={`flex items-center gap-1.5 px-3 py-3 border rounded-xl text-xs font-bold transition shadow-xs hover:scale-102 ${currentModeInfo.bgColor}`}
-                title="Bấm để chuyển đổi giữa 3 chế độ co giãn"
+                title="Bấm để chọn phạm vi tra cứu y khoa"
               >
                 <CurrentIcon className="w-4 h-4 shrink-0" />
                 <span className="hidden sm:inline">{currentModeInfo.label}</span>
@@ -233,7 +233,7 @@ export const ChatArea: React.FC<Props> = ({
                     Chọn mức độ co giãn
                   </div>
 
-                  {/* Chế độ 1: Nghiêm ngặt */}
+                  {/* Chế độ 1: Tiêu chuẩn Cơ sở */}
                   <button
                     type="button"
                     onClick={() => {
@@ -247,16 +247,16 @@ export const ChatArea: React.FC<Props> = ({
                     <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                     <div>
                       <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                        <span>Nghiêm ngặt (Strict)</span>
+                        <span>Tiêu chuẩn Cơ sở</span>
                         <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded font-semibold">Chuẩn cao</span>
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                        Chỉ trả lời khi 100% có trong tài liệu nội bộ; thiếu là từ chối ngay, không suy đoán.
+                        Chỉ tra cứu danh mục thuốc đã được thẩm định sẵn tại cơ sở y tế; không phán đoán ngoài danh mục.
                       </p>
                     </div>
                   </button>
 
-                  {/* Chế độ 2: Cân bằng */}
+                  {/* Chế độ 2: Tổng hợp Lâm sàng */}
                   <button
                     type="button"
                     onClick={() => {
@@ -270,16 +270,16 @@ export const ChatArea: React.FC<Props> = ({
                     <Scale className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
                       <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                        <span>Cân bằng (Balanced)</span>
+                        <span>Tổng hợp Lâm sàng</span>
                         <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">Khuyên dùng</span>
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                        Lấy tài liệu nội bộ làm gốc; tự động bổ sung y văn quốc tế chính thống nếu còn thiếu.
+                        Lấy danh mục thẩm định cơ sở làm gốc; tự động bổ sung dữ liệu y văn quốc tế uy tín nếu còn thiếu.
                       </p>
                     </div>
                   </button>
 
-                  {/* Chế độ 3: Mở rộng */}
+                  {/* Chế độ 3: Tra cứu Quốc tế */}
                   <button
                     type="button"
                     onClick={() => {
@@ -293,11 +293,11 @@ export const ChatArea: React.FC<Props> = ({
                     <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                     <div>
                       <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
-                        <span>Mở rộng (Flexible)</span>
-                        <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">Tự do</span>
+                        <span>Tra cứu Quốc tế</span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">Toàn diện</span>
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
-                        Không phụ thuộc tài liệu nội bộ; tự do tra cứu y văn quốc tế chính thống (LactMed, WHO...).
+                        Tra cứu toàn diện từ Thư viện Dược lý Lâm sàng Hoa Kỳ (LactMed® NIH) và Hiệp hội APILAM.
                       </p>
                     </div>
                   </button>

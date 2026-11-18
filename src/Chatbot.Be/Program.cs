@@ -57,7 +57,39 @@ builder.Services.AddSingleton(new SqliteKnowledgeStore(dbPath));
 builder.Services.AddSingleton<IDocumentRepository>(sp =>
     new DocumentRepository(sp.GetRequiredService<SqliteKnowledgeStore>(), docsPath));
 
-builder.Services.AddSingleton<VectorSearchService>();
+// Cấu hình Vector Store Provider (Qdrant Cloud hoặc SQLite In-Memory)
+string vectorStoreProvider = builder.Configuration["VectorStoreProvider"] 
+    ?? Environment.GetEnvironmentVariable("VECTOR_STORE_PROVIDER") 
+    ?? "qdrant";
+
+string qdrantEndpoint = builder.Configuration["Qdrant:Endpoint"] 
+    ?? Environment.GetEnvironmentVariable("QDRANT_ENDPOINT") 
+    ?? string.Empty;
+
+string qdrantApiKey = builder.Configuration["Qdrant:ApiKey"] 
+    ?? Environment.GetEnvironmentVariable("QDRANT_API_KEY") 
+    ?? string.Empty;
+
+string qdrantCollection = builder.Configuration["Qdrant:CollectionName"] 
+    ?? Environment.GetEnvironmentVariable("QDRANT_COLLECTION_NAME") 
+    ?? "medical_knowledge";
+
+ulong qdrantVectorSize = ulong.TryParse(builder.Configuration["Qdrant:VectorSize"] 
+    ?? Environment.GetEnvironmentVariable("QDRANT_VECTOR_SIZE"), out var parsedSize) && parsedSize > 0 ? parsedSize : 768;
+
+if (vectorStoreProvider.Equals("qdrant", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(qdrantEndpoint))
+{
+    Console.WriteLine($"[Cấu hình] Sử dụng Qdrant Cloud Vector Database: {qdrantEndpoint} (Collection: {qdrantCollection})");
+    builder.Services.AddSingleton(new QdrantVectorService(qdrantEndpoint, qdrantApiKey, qdrantCollection, qdrantVectorSize));
+    builder.Services.AddSingleton<VectorSearchService>(sp =>
+        new VectorSearchService(sp.GetRequiredService<IDocumentRepository>(), sp.GetService<QdrantVectorService>()));
+}
+else
+{
+    Console.WriteLine("[Cấu hình] Sử dụng Local SQLite + In-Memory SIMD Vector Store.");
+    builder.Services.AddSingleton<VectorSearchService>(sp =>
+        new VectorSearchService(sp.GetRequiredService<IDocumentRepository>(), null));
+}
 
 // Cấu hình LLM Provider
 string provider = builder.Configuration["LLM:Provider"] 
@@ -99,7 +131,16 @@ else
         new GeminiProvider(sp.GetRequiredService<HttpClient>(), apiKey, chatModel, embeddingModel));
 }
 
-builder.Services.AddSingleton<MedicalRagService>();
+builder.Services.AddSingleton<VerifiedArticleResolver>();
+builder.Services.AddSingleton<MedicalRagService>(sp =>
+    new MedicalRagService(
+        sp.GetRequiredService<IDocumentRepository>(),
+        sp.GetRequiredService<VectorSearchService>(),
+        sp.GetRequiredService<ILlmClient>(),
+        sp.GetRequiredService<IEmbeddingClient>(),
+        sp.GetRequiredService<VerifiedArticleResolver>(),
+        sp.GetService<QdrantVectorService>()
+    ));
 
 // Cấu hình CORS cho phép Frontend gọi trong môi trường dev
 builder.Services.AddCors(options =>
@@ -142,14 +183,17 @@ bool ValidateAdmin(HttpRequest request)
 // ==========================================
 
 // 1. Health check
-app.MapGet("/api/health", (VectorSearchService vectorService) =>
+app.MapGet("/api/health", (VectorSearchService vectorService, IServiceProvider sp) =>
 {
+    var qdrant = sp.GetService<QdrantVectorService>();
     return Results.Ok(new
     {
         status = "ok",
         provider,
         chatModel,
         embeddingModel,
+        vectorStore = qdrant != null ? "qdrant" : "sqlite",
+        qdrantCollection = qdrant?.CollectionName,
         hasApiKey = !string.IsNullOrWhiteSpace(apiKey),
         totalChunks = vectorService.TotalChunks
     });
@@ -312,7 +356,7 @@ app.MapPost("/api/admin/documents/crawl", async (
 });
 
 // 6. Admin Delete Document
-app.MapDelete("/api/admin/documents/{id}", async (string id, HttpRequest request, IDocumentRepository repo, VectorSearchService searchService) =>
+app.MapDelete("/api/admin/documents/{id}", async (string id, HttpRequest request, IDocumentRepository repo, VectorSearchService searchService, IServiceProvider sp) =>
 {
     if (!ValidateAdmin(request))
         return Results.Unauthorized();
@@ -320,6 +364,12 @@ app.MapDelete("/api/admin/documents/{id}", async (string id, HttpRequest request
     bool deleted = await repo.DeleteDocumentAsync(id);
     if (!deleted)
         return Results.NotFound(new { error = "Không tìm thấy tài liệu để xóa" });
+
+    var qdrant = sp.GetService<QdrantVectorService>();
+    if (qdrant != null)
+    {
+        await qdrant.DeleteDocumentChunksAsync(id);
+    }
 
     // Nạp lại index
     await searchService.ReloadIndexAsync();

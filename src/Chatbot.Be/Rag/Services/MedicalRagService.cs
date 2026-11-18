@@ -22,17 +22,23 @@ public class MedicalRagService
     private readonly VectorSearchService _searchService;
     private readonly ILlmClient _llmClient;
     private readonly IEmbeddingClient _embeddingClient;
+    private readonly VerifiedArticleResolver _articleResolver;
+    private readonly QdrantVectorService? _qdrantService;
 
     public MedicalRagService(
         IDocumentRepository documentRepo,
         VectorSearchService searchService,
         ILlmClient llmClient,
-        IEmbeddingClient embeddingClient)
+        IEmbeddingClient embeddingClient,
+        VerifiedArticleResolver articleResolver,
+        QdrantVectorService? qdrantService = null)
     {
         _documentRepo = documentRepo;
         _searchService = searchService;
         _llmClient = llmClient;
         _embeddingClient = embeddingClient;
+        _articleResolver = articleResolver;
+        _qdrantService = qdrantService;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -81,6 +87,19 @@ public class MedicalRagService
         }
 
         await _documentRepo.SaveChunksAsync(doc.Id, chunkEntities, ct);
+
+        if (_qdrantService != null)
+        {
+            try
+            {
+                await _qdrantService.UpsertChunksAsync(doc.Id, doc.FileName, chunkEntities, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Cảnh báo Qdrant Ingest] Lỗi đẩy vector lên Qdrant Cloud: {ex.Message}");
+            }
+        }
+
         await _searchService.ReloadIndexAsync(ct);
     }
 
@@ -134,7 +153,7 @@ public class MedicalRagService
             if (_searchService.TotalChunks > 0)
             {
                 var queryVector = await _embeddingClient.GenerateEmbeddingAsync(userQuery, ct);
-                searchHits = _searchService.Search(queryVector, topK: 3, minScore: 0.38f);
+                searchHits = await _searchService.SearchAsync(queryVector, topK: 3, minScore: 0.38f, ct);
             }
 
             // 2. Đối soát thực thể / từ khóa hoạt chất trong câu hỏi với nội dung Chunk
@@ -214,38 +233,10 @@ public class MedicalRagService
                 string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
                 string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
 
-                if (primaryDrug != "medication")
-                {
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = "ext_lactmed",
-                        DocumentId = "ext_lactmed",
-                        DocumentName = $"LactMed: Tra cứu {drugCapitalized}",
-                        StartOffset = 0,
-                        EndOffset = 0,
-                        Snippet = $"Chuyên luận y văn {drugCapitalized} trong cơ sở dữ liệu Drugs and Lactation Database (LactMed® - Viện Y tế Quốc gia Hoa Kỳ NIH).",
-                        RelevanceScore = 0.98f,
-                        SourceType = "external",
-                        Url = $"https://www.ncbi.nlm.nih.gov/books/NBK501922/?term={Uri.EscapeDataString(primaryDrug)}",
-                        VerifiedOrg = "NIH / NLM (Hoa Kỳ)"
-                    });
+                var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
+                citations.AddRange(verifiedArticles);
 
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = "ext_pubmed",
-                        DocumentId = "ext_pubmed",
-                        DocumentName = $"PubMed: Nghiên cứu {drugCapitalized}",
-                        StartOffset = 0,
-                        EndOffset = 0,
-                        Snippet = $"Kết quả nghiên cứu lâm sàng về nồng độ và an toàn của {drugCapitalized} qua sữa mẹ trên PubMed.",
-                        RelevanceScore = 0.95f,
-                        SourceType = "external",
-                        Url = $"https://pubmed.ncbi.nlm.nih.gov/?term={Uri.EscapeDataString(primaryDrug)}+lactmed",
-                        VerifiedOrg = "NCBI / PubMed"
-                    });
-                }
-
-                systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, drugCapitalized);
+                systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, verifiedArticles, drugCapitalized);
                 safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
             }
             else // mode == "flexible"
@@ -275,53 +266,11 @@ public class MedicalRagService
                 string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
                 string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
 
-                // Luôn đính kèm đường link tra cứu chính xác hoạt chất cho người dùng
-                if (primaryDrug != "medication")
-                {
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = "ext_lactmed",
-                        DocumentId = "ext_lactmed",
-                        DocumentName = $"LactMed: Tra cứu {drugCapitalized}",
-                        StartOffset = 0,
-                        EndOffset = 0,
-                        Snippet = $"Chuyên luận y văn {drugCapitalized} trong cơ sở dữ liệu Drugs and Lactation Database (LactMed® - Viện Y tế Quốc gia Hoa Kỳ NIH).",
-                        RelevanceScore = 0.98f,
-                        SourceType = "external",
-                        Url = $"https://www.ncbi.nlm.nih.gov/books/NBK501922/?term={Uri.EscapeDataString(primaryDrug)}",
-                        VerifiedOrg = "NIH / NLM (Hoa Kỳ)"
-                    });
+                // Lấy danh sách bài viết chuyên luận thật đã được đối soát từ NIH / APILAM
+                var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
+                citations.AddRange(verifiedArticles);
 
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = "ext_pubmed",
-                        DocumentId = "ext_pubmed",
-                        DocumentName = $"PubMed: Nghiên cứu {drugCapitalized}",
-                        StartOffset = 0,
-                        EndOffset = 0,
-                        Snippet = $"Tổng hợp các nghiên cứu lâm sàng về nồng độ và độc tính của {drugCapitalized} ở phụ nữ cho con bú trên PubMed.",
-                        RelevanceScore = 0.95f,
-                        SourceType = "external",
-                        Url = $"https://pubmed.ncbi.nlm.nih.gov/?term={Uri.EscapeDataString(primaryDrug)}+lactmed",
-                        VerifiedOrg = "NCBI / PubMed"
-                    });
-
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = "ext_drugs_com",
-                        DocumentId = "ext_drugs_com",
-                        DocumentName = $"Drugs.com: Dược động học {drugCapitalized}",
-                        StartOffset = 0,
-                        EndOffset = 0,
-                        Snippet = $"Chuyên luận lâm sàng chi tiết về nồng độ {drugCapitalized} trong sữa mẹ, thời gian bán thải và theo dõi trẻ sơ sinh.",
-                        RelevanceScore = 0.92f,
-                        SourceType = "external",
-                        Url = $"https://www.drugs.com/breastfeeding/{Uri.EscapeDataString(primaryDrug)}.html",
-                        VerifiedOrg = "Drugs.com Lactation Database"
-                    });
-                }
-
-                systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, userQuery, drugCapitalized);
+                systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, userQuery, verifiedArticles, drugCapitalized);
                 safetyLevel = relevantChunks.Any() ? StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks) : "Compatible";
             }
 
@@ -340,7 +289,7 @@ public class MedicalRagService
         {
             Console.WriteLine($"[RAG Lỗi] {ex.Message}");
             return new RagQueryResult(
-                Stream: ToAsyncEnumerable($"⚠️ Hệ thống đang kết nối hoặc xác thực mô hình AI ({ex.Message}). Nếu bạn đang cấu hình API key, vui lòng kiểm tra lại tính hợp lệ của khóa trong file .env." + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                Stream: ToAsyncEnumerable($"⚠️ Hệ thống tư vấn y tế đang quá tải hoặc tạm thời gián đoạn kết nối ({ex.Message}). Bạn vui lòng thử lại sau giây lát, hoặc tham khảo trực tiếp ý kiến bác sĩ/dược sĩ nếu cần tư vấn gấp." + StrictMedicalPromptBuilder.MandatoryDisclaimer),
                 Citations: new List<CitationItem>(),
                 SafetyLevel: "None",
                 IsRefusal: true,

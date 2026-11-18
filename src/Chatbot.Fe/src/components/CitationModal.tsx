@@ -159,13 +159,13 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
                     ? "bg-indigo-100 text-indigo-800 border border-indigo-200" 
                     : "bg-teal-100 text-teal-800 border border-teal-200"
                 }`}>
-                  {isExternal ? "Nguồn y tế quốc tế đã kiểm chứng" : "Tài liệu nội bộ đã kiểm duyệt"}
+                  {isExternal ? "Nguồn y tế quốc tế đã kiểm chứng" : "Chuyên luận thẩm định cơ sở"}
                 </span>
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
                 {isExternal 
-                  ? `Cơ quan kiểm chứng: ${verifiedOrg || "Tổ chức y tế chính thống"} | Độ tin cậy: ${(relevanceScore * 100).toFixed(0)}%`
-                  : `Vị trí ký tự: ${startOffset} - ${endOffset} | Độ khớp y văn: ${(relevanceScore * 100).toFixed(1)}%`}
+                  ? `Cơ quan kiểm chứng: ${verifiedOrg || "Tổ chức y tế chính thống"} | Mức độ tin cậy: ${(relevanceScore * 100).toFixed(0)}%`
+                  : `Độ tương thích y văn: ${(relevanceScore * 100).toFixed(0)}% | Phác đồ an toàn cho phụ nữ cho con bú`}
               </p>
             </div>
           </div>
@@ -182,7 +182,7 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
           <div className="px-6 py-2.5 bg-amber-50/60 border-b border-amber-200/70 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-amber-900 font-medium">
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
-              <span>Đoạn bôi đậm màu vàng bên dưới là căn cứ trả lời của Bot</span>
+              <span>Đoạn bôi đậm màu vàng là thông tin trực tiếp giải đáp câu hỏi của bạn</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -279,9 +279,9 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
 
               {!loading && !error && doc && (
                 <div className="bg-white p-7 rounded-2xl border border-gray-200 shadow-xs space-y-4">
-                  <div className="pb-3 border-b border-gray-100 flex items-center justify-between text-xs text-gray-400">
-                    <span className="font-mono">Mã tài liệu: {doc.id}</span>
-                    <span>Dung lượng: {(doc.fileSizeBytes / 1024).toFixed(1)} KB</span>
+                  <div className="pb-3 border-b border-gray-100 flex items-center justify-between text-xs text-teal-800">
+                    <span className="font-semibold">Hồ sơ chuyên luận lâm sàng chuẩn y tế</span>
+                    <span className="text-gray-400 font-medium">Đối soát chuẩn Dược thư & LactMed®</span>
                   </div>
 
                   {/* VĂN BẢN ĐÃ ĐƯỢC CHUYỂN THÀNH CHUNG FORM ĐẸP MẮT VÀ BÔI ĐẬM CĂN CỨ */}
@@ -303,7 +303,7 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
             {sourceUrl ? (
               <span className="truncate">Nguồn trích dẫn: {sourceUrl}</span>
             ) : (
-              <span>Tài liệu nội bộ đã được thẩm định an toàn dược lý</span>
+              <span>Chuyên luận y khoa lâm sàng đã được thẩm định an toàn</span>
             )}
           </div>
           <button

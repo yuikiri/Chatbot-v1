@@ -1,5 +1,6 @@
 services:
   chatbot-app:
+    image: ${DOCKER_IMAGE:-yuikiri/chatbot_v1:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -7,7 +8,7 @@ services:
     ports:
       - "${PORT:-10000}:10000"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
       - PORT=10000
       - LLM__Provider=${LLM_PROVIDER:-gemini}
       - LLM__BaseUrl=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
@@ -17,7 +18,12 @@ services:
       - Admin__SecretKey=${ADMIN_SECRET_KEY:-123123123}
       - Storage__DocumentsPath=/app/data/documents
       - Storage__DbPath=/app/data/index/knowledge.db
+      - VECTOR_STORE_PROVIDER=${VECTOR_STORE_PROVIDER:-qdrant}
+      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-medical_knowledge}
+      - QDRANT_VECTOR_SIZE=${QDRANT_VECTOR_SIZE:-3072}
     volumes:
-      - ./src/Chatbot.Be/data/documents:/app/data/documents
-      - ./src/Chatbot.Be/data/index:/app/data/index
+      - ${STORAGE_DOCUMENTS_DIR:-./src/Chatbot.Be/data/documents}:/app/data/documents
+      - ${STORAGE_INDEX_DIR:-./src/Chatbot.Be/data/index}:/app/data/index
     restart: unless-stopped
