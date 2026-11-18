@@ -4,6 +4,7 @@ using Chatbot.Endpoints;
 using Chatbot.Filters;
 using Chatbot.Middleware;
 using Chatbot.Rag.Providers;
+using Chatbot.Rag.Security;
 using Chatbot.Rag.Services;
 
 // 1. Tự động tìm và nạp file .env
@@ -120,6 +121,8 @@ builder.Services.AddSingleton<DynamicLlmService>(sp =>
 builder.Services.AddSingleton<ILlmClient>(sp => sp.GetRequiredService<DynamicLlmService>());
 builder.Services.AddSingleton<IEmbeddingClient>(sp => sp.GetRequiredService<DynamicLlmService>());
 builder.Services.AddSingleton<VerifiedArticleResolver>();
+builder.Services.AddSingleton<PromptGuardService>();
+builder.Services.AddSingleton<MedicalIntentClassifier>();
 
 builder.Services.AddSingleton<MedicalRagService>(sp =>
     new MedicalRagService(
@@ -128,6 +131,8 @@ builder.Services.AddSingleton<MedicalRagService>(sp =>
         sp.GetRequiredService<ILlmClient>(),
         sp.GetRequiredService<IEmbeddingClient>(),
         sp.GetRequiredService<VerifiedArticleResolver>(),
+        sp.GetRequiredService<PromptGuardService>(),
+        sp.GetRequiredService<MedicalIntentClassifier>(),
         sp.GetService<QdrantVectorService>()
     ));
 

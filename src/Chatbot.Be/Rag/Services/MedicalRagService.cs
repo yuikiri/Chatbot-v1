@@ -5,6 +5,7 @@ using Chatbot.Data.Text;
 using Chatbot.Rag.Parsers;
 using Chatbot.Rag.Prompts;
 using Chatbot.Rag.Providers;
+using Chatbot.Rag.Security;
 using System.Runtime.CompilerServices;
 
 namespace Chatbot.Rag.Services;
@@ -24,6 +25,8 @@ public class MedicalRagService
     private readonly ILlmClient _llmClient;
     private readonly IEmbeddingClient _embeddingClient;
     private readonly VerifiedArticleResolver _articleResolver;
+    private readonly PromptGuardService _promptGuard;
+    private readonly MedicalIntentClassifier _intentClassifier;
     private readonly QdrantVectorService? _qdrantService;
 
     public MedicalRagService(
@@ -32,6 +35,8 @@ public class MedicalRagService
         ILlmClient llmClient,
         IEmbeddingClient embeddingClient,
         VerifiedArticleResolver articleResolver,
+        PromptGuardService promptGuard,
+        MedicalIntentClassifier intentClassifier,
         QdrantVectorService? qdrantService = null)
     {
         _documentRepo = documentRepo;
@@ -39,6 +44,8 @@ public class MedicalRagService
         _llmClient = llmClient;
         _embeddingClient = embeddingClient;
         _articleResolver = articleResolver;
+        _promptGuard = promptGuard;
+        _intentClassifier = intentClassifier;
         _qdrantService = qdrantService;
     }
 
@@ -125,8 +132,37 @@ public class MedicalRagService
             );
         }
 
-        // TẦNG 1: Nhận diện Intent Chào hỏi & Hỏi năng lực bot (Chit-chat / Capabilities)
-        if (IsCapabilitiesOrGreetingQuery(userQuery))
+        // TẦNG 0: VỆ SĨ BẢO MẬT & CẢNH BÁO NGUY CẤP (Prompt Injection, Jailbreak, Tự hại, Quá liều cấp)
+        var securityEval = _promptGuard.Evaluate(userQuery);
+        if (securityEval.RiskLevel == SecurityRiskLevel.PromptInjection)
+        {
+            Console.WriteLine($"[Bảo mật] Chặn Prompt Injection: \"{userQuery}\" - {securityEval.ThreatDescription}");
+            return new RagQueryResult(
+                Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.SecurityRefusalResponse + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                Citations: new List<CitationItem>(),
+                SafetyLevel: "None",
+                IsRefusal: true,
+                Mode: mode
+            );
+        }
+        if (securityEval.RiskLevel == SecurityRiskLevel.SelfHarmEmergency)
+        {
+            Console.WriteLine($"[Khẩn cấp] Phát hiện tình huống tự hại / ngộ độc: \"{userQuery}\"");
+            return new RagQueryResult(
+                Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.EmergencyHotlineResponse),
+                Citations: new List<CitationItem>(),
+                SafetyLevel: "Contraindicated",
+                IsRefusal: true,
+                Mode: mode
+            );
+        }
+
+        string cleanQuery = securityEval.SanitizedQuery;
+
+        // TẦNG 1: PHÂN LOẠI Ý ĐỊNH & KIỂM TRA PHẠM VI MIỀN Y TẾ
+        var intentResult = _intentClassifier.Classify(cleanQuery);
+
+        if (intentResult.Intent == QueryIntent.GreetingOrCapabilities)
         {
             return new RagQueryResult(
                 Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.GreetingResponse + StrictMedicalPromptBuilder.MandatoryDisclaimer),
@@ -137,11 +173,21 @@ public class MedicalRagService
             );
         }
 
-        // TẦNG 2: Nhận diện khi người dùng chỉ nêu triệu chứng chung chung ("tôi bị sốt", "em bị đau đầu"...)
-        if (IsVagueSymptomOnly(userQuery))
+        if (intentResult.Intent == QueryIntent.VagueSymptomsOnly)
         {
             return new RagQueryResult(
                 Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.VagueSymptomRefusalResponse + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                Citations: new List<CitationItem>(),
+                SafetyLevel: "None",
+                IsRefusal: true,
+                Mode: mode
+            );
+        }
+
+        if (intentResult.Intent == QueryIntent.OutOfScope)
+        {
+            return new RagQueryResult(
+                Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.OutOfScopeRefusalResponse + StrictMedicalPromptBuilder.MandatoryDisclaimer),
                 Citations: new List<CitationItem>(),
                 SafetyLevel: "None",
                 IsRefusal: true,
@@ -155,26 +201,30 @@ public class MedicalRagService
             var searchHits = new List<(ChunkEntity Chunk, float Score)>();
             if (_searchService.TotalChunks > 0)
             {
-                var queryVector = await _embeddingClient.GenerateEmbeddingAsync(userQuery, ct);
+                var queryVector = await _embeddingClient.GenerateEmbeddingAsync(cleanQuery, ct);
                 searchHits = await _searchService.SearchAsync(queryVector, topK: RagConstants.DefaultTopK, minScore: RagConstants.DefaultMinRelevanceScore, ct);
             }
 
             // 2. Đối soát thực thể / từ khóa hoạt chất trong câu hỏi với nội dung Chunk
-            var distinctiveKeywords = ExtractDistinctiveKeywords(userQuery);
-            var relevantHits = searchHits.Where(h => IsChunkRelevant(h.Chunk, distinctiveKeywords)).ToList();
+            var distinctiveKeywords = ExtractDistinctiveKeywords(cleanQuery);
+            string primaryDrug = intentResult.DetectedDrugOrSubstance ?? ExtractPrimaryDrugName(cleanQuery, distinctiveKeywords);
+            string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
+
+            // Bắt buộc chunk phải chứa tên thuốc (nếu có) hoặc từ khóa dược lý cụ thể
+            var relevantHits = searchHits.Where(h => IsChunkRelevant(h.Chunk, distinctiveKeywords, primaryDrug)).ToList();
 
             var citations = new List<CitationItem>();
             string systemPrompt = string.Empty;
             string safetyLevel = "None";
 
-            // TẦNG 3: XỬ LÝ THEO 3 CHẾ ĐỘ CO GIÃN
+            // TẦNG 2: XỬ LÝ THEO 3 CHẾ ĐỘ CO GIÃN
             if (mode == "strict")
             {
-                // CHẾ ĐỘ 1: NGHIÊM NGẶT (100% tài liệu nội bộ)
+                // CHẾ ĐỘ 1: NGHIÊM NGẶT (100% tài liệu nội bộ cơ sở)
                 if (relevantHits.Count == 0)
                 {
                     return new RagQueryResult(
-                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildRefusalForMissingDoc(userQuery) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildRefusalForMissingDoc(primaryDrug) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
                         Citations: new List<CitationItem>(),
                         SafetyLevel: "None",
                         IsRefusal: true,
@@ -184,7 +234,7 @@ public class MedicalRagService
 
                 citations.AddRange(BuildInternalCitations(relevantHits));
                 var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-                systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks);
+                systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks, cleanQuery);
                 safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
             }
             else if (mode == "balanced")
@@ -193,7 +243,7 @@ public class MedicalRagService
                 if (relevantHits.Count == 0)
                 {
                     return new RagQueryResult(
-                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BalancedNoDocRefusalResponse + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildBalancedNoDocRefusal(primaryDrug) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
                         Citations: new List<CitationItem>(),
                         SafetyLevel: "None",
                         IsRefusal: true,
@@ -203,13 +253,11 @@ public class MedicalRagService
 
                 citations.AddRange(BuildInternalCitations(relevantHits));
                 var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-                string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
-                string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
 
                 var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
                 citations.AddRange(verifiedArticles);
 
-                systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, verifiedArticles, drugCapitalized);
+                systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
                 safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
             }
             else // mode == "flexible"
@@ -221,19 +269,16 @@ public class MedicalRagService
                     citations.AddRange(BuildInternalCitations(relevantHits));
                 }
 
-                string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
-                string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
-
                 // Lấy danh sách bài viết chuyên luận thật đã được đối soát từ NIH / APILAM
                 var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
                 citations.AddRange(verifiedArticles);
 
-                systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, userQuery, verifiedArticles, drugCapitalized);
+                systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
                 safetyLevel = relevantChunks.Any() ? StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks) : "Compatible";
             }
 
-            // Gọi streaming từ LLM
-            var tokenStream = StreamWithDisclaimerAsync(_llmClient.StreamChatAsync(systemPrompt, userQuery, ct), ct);
+            // Gọi streaming từ LLM được bao bọc trong thẻ an toàn
+            var tokenStream = StreamWithDisclaimerAsync(_llmClient.StreamChatAsync(systemPrompt, cleanQuery, ct), ct);
 
             return new RagQueryResult(
                 Stream: tokenStream,
@@ -256,65 +301,6 @@ public class MedicalRagService
                 Mode: mode
             );
         }
-    }
-
-    private static bool IsCapabilitiesOrGreetingQuery(string query)
-    {
-        var q = query.Trim().ToLowerInvariant().Trim('.', '?', '!', ',', ';', ':', ' ');
-
-        string[] phrases = new[]
-        {
-            // Chào hỏi
-            "hi", "hello", "hey", "alo", "chao", "chào", "chao ban", "chào bạn", 
-            "xin chao", "xin chào", "hi bot", "chào bot", "chao bot", "ad oi", "ad ơi",
-            "bot oi", "bot ơi", "hello bot", "hi bạn", "chào em", "chao em",
-            // Năng lực & chức năng bot
-            "bạn là ai", "ban la ai", "who are you",
-            "chức năng của bạn", "chuc nang cua ban", "chức năng của bạn là gì",
-            "bạn có thể làm gì", "ban co the lam gi",
-            "bạn giúp được gì", "ban giup duoc gi",
-            "giúp tôi", "giup toi",
-            "hướng dẫn sử dụng", "huong dan su dung",
-            "bạn có thể trả lời câu hoi liên quan tới gì",
-            "bạn có thể trả lời câu hỏi liên quan tới gì",
-            "bạn trả lời được những gì", "ban tra loi duoc nhung gi",
-            "bạn có thể trả lời những gì", "ban co the tra loi nhung gi",
-            "trả lời câu hỏi gì", "tra loi cau hoi gi"
-        };
-
-        if (phrases.Contains(q))
-            return true;
-
-        if (q.StartsWith("chào bạn") || q.StartsWith("xin chào") || q.StartsWith("hello") || q == "hi")
-            return true;
-
-        if (q.Contains("bạn có thể trả lời") || q.Contains("bạn làm được gì") || q.Contains("bạn là ai"))
-            return true;
-
-        return false;
-    }
-
-    private static bool IsVagueSymptomOnly(string query)
-    {
-        var q = query.Trim().ToLowerInvariant().Trim('.', '?', '!', ',', ' ');
-
-        string[] vaguePhrases = new[]
-        {
-            "bị sốt", "bi sot", "tôi bị sốt", "toi bi sot", "em bị sốt", "em bi sot", "đang bị sốt", "dang bi sot",
-            "bị đau đầu", "bi dau dau", "tôi bị đau đầu", "toi bi dau dau", "đau đầu",
-            "bị đau bụng", "bi dau bung", "bị tiêu chảy", "bi tieu chay", "bị cảm cúm", "bi cam cum",
-            "bị cảm", "bi cam", "bị ho", "bi ho", "đau họng", "bị mệt", "bi met", "bị viêm họng"
-        };
-
-        foreach (var phrase in vaguePhrases)
-        {
-            if (q == phrase || q == $"{phrase} thì sao" || q == $"{phrase} làm sao" || q == $"{phrase} phải làm sao")
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
@@ -357,6 +343,7 @@ public class MedicalRagService
         "hiệu", "hieu", "quả", "qua",
 
         // Triệu chứng chung (không phải tên thuốc)
+        "bị", "bi", "mắc", "mac", "nhiễm", "nhiem",
         "đau", "dau", "sốt", "sot", "cảm", "cam", "cúm", "cum", "ho", "họng", "hong", "đầu", "dau",
         "bụng", "bung", "viêm", "viem", "mệt", "met", "dị", "di", "ứng", "ung", "nổi", "noi", "mề", "me",
         "đay", "day", "ngứa", "ngua", "sổ", "so", "mũi", "mui", "nghẹt", "nghet", "chảy", "chay",
@@ -385,15 +372,26 @@ public class MedicalRagService
         return list;
     }
 
-    private static bool IsChunkRelevant(ChunkEntity chunk, List<string> distinctiveKeywords)
+    private static bool IsChunkRelevant(ChunkEntity chunk, List<string> distinctiveKeywords, string? primaryDrug)
     {
-        if (distinctiveKeywords == null || distinctiveKeywords.Count == 0)
+        var chunkText = (chunk.DocumentName + " " + chunk.Content).ToLowerInvariant();
+
+        // 1. Nếu xác định được tên thuốc rõ ràng, chunk BẮT BUỘC phải chứa tên thuốc này
+        if (!string.IsNullOrWhiteSpace(primaryDrug) && primaryDrug != "medication")
         {
-            return false; // Nếu không có từ khóa hoạt chất/tên thuốc cụ thể nào, KHÔNG tự ý gán bừa tài liệu
+            if (chunkText.Contains(primaryDrug.ToLowerInvariant()))
+            {
+                return true;
+            }
         }
 
-        var chunkText = (chunk.DocumentName + " " + chunk.Content).ToLowerInvariant();
-        return distinctiveKeywords.Any(kw => chunkText.Contains(kw));
+        // 2. Nếu không có tên thuốc riêng, kiểm tra có ít nhất 1 từ khóa đặc thù khớp trong chunk
+        if (distinctiveKeywords != null && distinctiveKeywords.Count > 0)
+        {
+            return distinctiveKeywords.Any(kw => chunkText.Contains(kw));
+        }
+
+        return false;
     }
 
     public static string ExtractPrimaryDrugName(string query, List<string> distinctiveKeywords)
@@ -401,26 +399,9 @@ public class MedicalRagService
         if (distinctiveKeywords != null && distinctiveKeywords.Count > 0)
         {
             var candidate = distinctiveKeywords.OrderByDescending(k => k.Length).First();
-            return NormalizeDrugName(candidate);
+            return MedicalIntentClassifier.NormalizeDrugName(candidate);
         }
         return "medication";
-    }
-
-    public static string NormalizeDrugName(string raw)
-    {
-        var lower = (raw ?? "").Trim().ToLowerInvariant();
-        return lower switch
-        {
-            "hapacol" or "panadol" or "efferalgan" or "tylenol" or "paracold" or "acetaminophen" => "paracetamol",
-            "advil" or "motrin" => "ibuprofen",
-            "augmentin" => "amoxicillin",
-            "aspirine" => "aspirin",
-            "claritin" => "loratadine",
-            "zyrtec" => "cetirizine",
-            "keflex" => "cephalexin",
-            "zithromax" => "azithromycin",
-            _ => lower
-        };
     }
 
     private static List<CitationItem> BuildInternalCitations(IEnumerable<(ChunkEntity Chunk, float Score)> hits)
@@ -439,9 +420,15 @@ public class MedicalRagService
         }).ToList();
     }
 
+    private static async IAsyncEnumerable<string> ToAsyncEnumerable(string text)
+    {
+        yield return text;
+        await Task.CompletedTask;
+    }
+
     private static async IAsyncEnumerable<string> StreamWithDisclaimerAsync(
         IAsyncEnumerable<string> sourceStream, 
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         await foreach (var token in sourceStream.WithCancellation(ct))
         {
@@ -449,11 +436,5 @@ public class MedicalRagService
         }
 
         yield return StrictMedicalPromptBuilder.MandatoryDisclaimer;
-    }
-
-    private static async IAsyncEnumerable<string> ToAsyncEnumerable(string text)
-    {
-        yield return text;
-        await Task.CompletedTask;
     }
 }
