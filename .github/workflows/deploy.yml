@@ -43,6 +43,7 @@ jobs:
           host: ${{ secrets.VPS_HOST || secrets.HOST }}
           username: ${{ secrets.VPS_USERNAME || secrets.USERNAME || 'yuikiri' }}
           password: ${{ secrets.VPS_PASSWORD || secrets.PASSWORD || secrets.VPS_PASS }}
+          key: ${{ secrets.VPS_SSH_KEY || secrets.SSH_KEY || '' }}
           port: ${{ secrets.VPS_PORT || secrets.PORT || 22 }}
           script: |
             cd ~/yuikiri/chatbot_v1 || exit 1
