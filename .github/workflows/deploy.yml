@@ -33,14 +33,6 @@ jobs:
           file: ./Labs/Components/Chatbot_v1/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/chatbot_v1:latest
-          build-args: |
-            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
-            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-            VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-            VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-            VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
-            VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
 
   deploy-to-vps:
     name: Deploy to VPS via SSH
@@ -51,7 +43,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Đồng bộ file docker-compose.yml lên VPS
+      # Đồng bộ tệp docker-compose.yml lên VPS vào đúng thư mục ~/yuikiri/chatbot_v1
       - name: Copy docker-compose.yml to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -73,23 +65,26 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
           script: |
-            # 1. Tạo các thư mục lưu trữ dữ liệu y khoa nếu chưa có
-            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/documents/raw
-            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/documents/normalized
-            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/index
-            cd ~/yuikiri/chatbot_v1
+            cd ~/yuikiri/chatbot_v1 || exit 1
 
-            # 2. Đăng nhập Docker Hub nếu cần kéo private image
+            # Đăng nhập Docker Hub nếu image private
             if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
               echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             fi
 
-            # 3. Kéo image mới nhất từ Docker Hub về
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chatbot_v1:latest
+            # Nhận diện lệnh compose trên CentOS 8 (hỗ trợ cả 'docker compose' v2 và 'docker-compose' v1)
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            else
+              DC="docker-compose"
+            fi
 
-            # 4. Khởi động lại container với image mới
-            docker compose down || true
-            docker compose up -d
+            # Kéo image mới nhất từ Docker Hub về
+            $DC pull chatbot-app
 
-            # 5. Dọn dẹp image cũ không dùng để tiết kiệm ổ cứng VPS
+            # Dừng container cũ và khởi động container mới với cấu hình từ file .env
+            $DC down
+            $DC up -d
+
+            # Dọn dẹp images cũ không dùng để tiết kiệm dung lượng đĩa
             docker image prune -f
