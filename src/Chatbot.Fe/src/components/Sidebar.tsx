@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { type ConversationItem, formatConversationTime } from "../services/firebase";
+import { useSecretAdmin } from "../hooks/useSecretAdmin";
 import type { User } from "firebase/auth";
 import { 
   Plus, 
@@ -44,7 +45,6 @@ export const Sidebar: React.FC<Props> = ({
 }) => {
   const [editingConvId, setEditingConvId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const clickTimeoutRef = useRef<any>(null);
 
   // Cơ chế mở Admin ẩn: Nhấn phím tắt Ctrl + Shift + A (hoặc Cmd + Shift + A trên Mac)
   useEffect(() => {
@@ -58,24 +58,8 @@ export const Sidebar: React.FC<Props> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onOpenAdmin]);
 
-  // Cơ chế mở Admin ẩn: Nhấp chuột 3 lần liên tiếp vào logo LactaMed AI
-  const handleLogoClick = () => {
-    if (clickTimeoutRef.current) {
-      clearTimeout(clickTimeoutRef.current);
-    }
-
-    const currentCount = (Number(sessionStorage.getItem("lactamed_logo_clicks") || "0")) + 1;
-    if (currentCount >= 3) {
-      sessionStorage.removeItem("lactamed_logo_clicks");
-      onOpenAdmin();
-      return;
-    }
-
-    sessionStorage.setItem("lactamed_logo_clicks", currentCount.toString());
-    clickTimeoutRef.current = setTimeout(() => {
-      sessionStorage.removeItem("lactamed_logo_clicks");
-    }, 1500);
-  };
+  // Cơ chế mở Admin ẩn: Chạm 3 lần liên tiếp vào icon logo LactaMed AI trong 1.5 giây
+  const handleLogoTap = useSecretAdmin(onOpenAdmin, 3, 1500);
 
   const startRename = (conv: ConversationItem, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -123,9 +107,9 @@ export const Sidebar: React.FC<Props> = ({
         <div className="p-4 border-b border-slate-800">
           <div className="flex items-center justify-between mb-3">
             <div 
-              onClick={handleLogoClick}
-              className="flex items-center gap-2 cursor-pointer select-none group"
-              title="LactaMed AI (Mẹo: Nhấp 3 lần liên tiếp để mở Cổng Quản trị)"
+              onClick={handleLogoTap}
+              className="flex items-center gap-2 cursor-pointer select-none group active:scale-95 transition-transform"
+              title="LactaMed AI"
             >
               <span className="text-xl group-hover:scale-110 transition-transform">👶</span>
               <h1 className="font-bold text-sm text-white tracking-wide">LactaMed AI</h1>
@@ -288,14 +272,6 @@ export const Sidebar: React.FC<Props> = ({
               Đăng nhập để lưu chat
             </button>
           )}
-
-          {/* Nút chấm ẩn kín đáo ở góc chân trang cho Admin */}
-          <button
-            type="button"
-            onClick={onOpenAdmin}
-            className="absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-800/80 hover:bg-teal-500/80 transition cursor-default"
-            title="LactaMed System"
-          />
         </div>
       </aside>
     </>

@@ -20,7 +20,10 @@ import {
   orderBy, 
   onSnapshot, 
   getDocs, 
-  serverTimestamp 
+  collectionGroup,
+  serverTimestamp,
+  deleteDoc,
+  increment
 } from "firebase/firestore";
 
 // ==============================================================================
@@ -49,17 +52,29 @@ export async function loginWithGoogle() {
   if (!auth) throw new Error("Firebase chưa được cấu hình. Vui lòng nhập API key trong .env");
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  return await signInWithPopup(auth, provider);
+  const cred = await signInWithPopup(auth, provider);
+  if (cred.user) {
+    await syncUserProfile(cred.user);
+  }
+  return cred;
 }
 
 export async function loginWithEmail(email: string, pass: string) {
   if (!auth) throw new Error("Firebase chưa được cấu hình.");
-  return await signInWithEmailAndPassword(auth, email, pass);
+  const cred = await signInWithEmailAndPassword(auth, email, pass);
+  if (cred.user) {
+    await syncUserProfile(cred.user);
+  }
+  return cred;
 }
 
 export async function registerWithEmail(email: string, pass: string) {
   if (!auth) throw new Error("Firebase chưa được cấu hình.");
-  return await createUserWithEmailAndPassword(auth, email, pass);
+  const cred = await createUserWithEmailAndPassword(auth, email, pass);
+  if (cred.user) {
+    await syncUserProfile(cred.user);
+  }
+  return cred;
 }
 
 export async function logoutUser() {
@@ -116,6 +131,10 @@ export interface ConversationItem {
   createdAt: any;
   updatedAt?: any;
   isHidden?: boolean;
+  rating?: number;
+  tags?: string[];
+  adminNotes?: string;
+  evaluatedAt?: any;
 }
 
 export async function saveConversationSession(userId: string, conversationId: string, title: string) {
@@ -127,6 +146,15 @@ export async function saveConversationSession(userId: string, conversationId: st
     updatedAt: serverTimestamp(),
     isHidden: false
   }, { merge: true });
+
+  try {
+    const userRef = doc(db, "users", userId);
+    await setDoc(userRef, {
+      conversationCount: increment(1)
+    }, { merge: true });
+  } catch (e) {
+    console.warn("Lỗi tăng conversationCount:", e);
+  }
 }
 
 export async function renameConversation(userId: string, conversationId: string, newTitle: string) {
@@ -150,8 +178,13 @@ export async function hideConversation(userId: string, conversationId: string) {
 export async function saveChatMessage(userId: string, conversationId: string, msg: any) {
   if (!db) return;
   const messagesRef = collection(db, "users", userId, "conversations", conversationId, "messages");
+  
+  const textLen = (msg.content || "").length;
+  const estTokens = Math.max(1, Math.round(textLen / 4));
+
   await addDoc(messagesRef, {
     ...msg,
+    estimatedTokens: estTokens,
     timestamp: serverTimestamp()
   });
 
@@ -160,6 +193,17 @@ export async function saveChatMessage(userId: string, conversationId: string, ms
   await setDoc(convRef, {
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  // Tăng thống kê token và số tin nhắn cho user
+  try {
+    const userRef = doc(db, "users", userId);
+    await setDoc(userRef, {
+      totalTokensEstimated: increment(estTokens),
+      totalMessagesCount: increment(1)
+    }, { merge: true });
+  } catch (e) {
+    console.warn("Lỗi cập nhật token user:", e);
+  }
 }
 
 export function subscribeConversations(userId: string, callback: (list: ConversationItem[]) => void) {
@@ -214,6 +258,343 @@ export async function getConversationMessages(userId: string, conversationId: st
   const msgs: any[] = [];
   snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
   return msgs;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL?: string | null;
+  providerId?: string; // 'google.com' | 'password' | 'anonymous'
+  emailVerified?: boolean;
+  creationTime?: string | null;
+  lastSignInTime?: string | null;
+  lastLoginAt: any;
+  createdAt?: any;
+  conversationCount?: number;
+  totalMessagesCount?: number;
+  totalTokensEstimated?: number;
+  totalCostUsd?: number;
+  totalCostVnd?: number;
+}
+
+export async function syncUserProfile(user: User) {
+  if (!db || !user) return;
+  const userRef = doc(db, "users", user.uid);
+  const prov = user.providerData?.[0]?.providerId || (user.isAnonymous ? "anonymous" : "password");
+  try {
+    await setDoc(userRef, {
+      uid: user.uid,
+      email: user.email || null,
+      displayName: user.displayName || user.email?.split("@")[0] || "Người dùng",
+      photoURL: user.photoURL || null,
+      providerId: prov,
+      emailVerified: user.emailVerified ?? false,
+      creationTime: user.metadata.creationTime || null,
+      lastSignInTime: user.metadata.lastSignInTime || null,
+      lastLoginAt: serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Lỗi đồng bộ hồ sơ user:", err);
+  }
+}
+
+export async function getAllUsersForAdmin(): Promise<{ users: UserProfile[]; error?: string }> {
+  if (!db) return { users: [] };
+  try {
+    const usersCol = collection(db, "users");
+    const snap = await getDocs(usersCol);
+    const users: UserProfile[] = [];
+    for (const d of snap.docs) {
+      const data = d.data();
+      const tokens = data.totalTokensEstimated || 0;
+      // Chi phí ước tính chuẩn Gemini Flash ($0.15 / 1M tokens) quy đổi ra USD và VNĐ (1$ ~ 25.400đ)
+      const costUsd = (tokens / 1_000_000) * 0.15;
+      const costVnd = costUsd * 25400;
+
+      users.push({
+        uid: d.id,
+        email: data.email || null,
+        displayName: data.displayName || data.email?.split("@")[0] || "Người dùng",
+        photoURL: data.photoURL || null,
+        providerId: data.providerId || "password",
+        emailVerified: data.emailVerified ?? false,
+        creationTime: data.creationTime || null,
+        lastSignInTime: data.lastSignInTime || null,
+        lastLoginAt: data.lastLoginAt,
+        createdAt: data.createdAt || data.lastLoginAt,
+        conversationCount: data.conversationCount || 0,
+        totalMessagesCount: data.totalMessagesCount || 0,
+        totalTokensEstimated: tokens,
+        totalCostUsd: Number(costUsd.toFixed(4)),
+        totalCostVnd: Math.round(costVnd)
+      });
+    }
+
+    // Nếu auth.currentUser đăng nhập mà chưa có trong collection (do đăng nhập trước đây), chèn vào
+    if (auth?.currentUser && !users.some(u => u.uid === auth.currentUser?.uid)) {
+      const u = auth.currentUser;
+      const prov = u.providerData?.[0]?.providerId || (u.isAnonymous ? "anonymous" : "password");
+      users.unshift({
+        uid: u.uid,
+        email: u.email || null,
+        displayName: u.displayName || u.email?.split("@")[0] || "Người dùng (Phiên hiện tại)",
+        photoURL: u.photoURL || null,
+        providerId: prov,
+        emailVerified: u.emailVerified ?? false,
+        creationTime: u.metadata.creationTime || null,
+        lastSignInTime: u.metadata.lastSignInTime || null,
+        lastLoginAt: new Date(),
+        createdAt: new Date(),
+        conversationCount: 0,
+        totalMessagesCount: 0,
+        totalTokensEstimated: 0,
+        totalCostUsd: 0,
+        totalCostVnd: 0
+      });
+    }
+
+    // Quét bổ sung từ subcollection conversations nếu có người dùng từng chat nhưng chưa đồng bộ hồ sơ
+    try {
+      const convsSnap = await getDocs(collectionGroup(db, "conversations"));
+      const foundUids = new Set<string>();
+      for (const convDoc of convsSnap.docs) {
+        const pathSegments = convDoc.ref.path.split("/");
+        if (pathSegments.length >= 2 && pathSegments[0] === "users") {
+          const discoveredUid = pathSegments[1];
+          if (!users.some(u => u.uid === discoveredUid)) {
+            foundUids.add(discoveredUid);
+          }
+        }
+      }
+
+      for (const discoveredUid of foundUids) {
+        users.push({
+          uid: discoveredUid,
+          email: null,
+          displayName: `Tài khoản (${discoveredUid.slice(0, 8)}...)`,
+          photoURL: null,
+          providerId: "discovered",
+          emailVerified: false,
+          creationTime: null,
+          lastSignInTime: null,
+          lastLoginAt: new Date(),
+          createdAt: new Date(),
+          conversationCount: 1,
+          totalMessagesCount: 0,
+          totalTokensEstimated: 0,
+          totalCostUsd: 0,
+          totalCostVnd: 0
+        });
+      }
+    } catch {
+      // Bỏ qua nếu rules không cho phép collectionGroup
+    }
+
+    users.sort((a, b) => {
+      const timeA = a.lastLoginAt?.seconds || (a.lastLoginAt instanceof Date ? Math.floor(a.lastLoginAt.getTime() / 1000) : 0);
+      const timeB = b.lastLoginAt?.seconds || (b.lastLoginAt instanceof Date ? Math.floor(b.lastLoginAt.getTime() / 1000) : 0);
+      return timeB - timeA;
+    });
+
+    return { users };
+  } catch (err: any) {
+    console.error("Lỗi lấy danh sách user từ Firestore:", err);
+    let errMsg = err.message || "Lỗi truy vấn Firestore";
+    if (err.code === "permission-denied" || errMsg.includes("permission-denied") || errMsg.includes("insufficient permissions")) {
+      errMsg = "Firestore Security Rules đang chặn đọc danh sách users (permission-denied). Vui lòng cấu hình Security Rules trong Firebase Console để cấp quyền đọc collection /users cho Admin.";
+    }
+
+    // Fallback: nếu có auth.currentUser, trả về ít nhất tài khoản hiện tại
+    const fallbackUsers: UserProfile[] = [];
+    if (auth?.currentUser) {
+      const u = auth.currentUser;
+      const prov = u.providerData?.[0]?.providerId || (u.isAnonymous ? "anonymous" : "password");
+      fallbackUsers.push({
+        uid: u.uid,
+        email: u.email || null,
+        displayName: u.displayName || u.email?.split("@")[0] || "Người dùng (Phiên hiện tại)",
+        photoURL: u.photoURL || null,
+        providerId: prov,
+        emailVerified: u.emailVerified ?? false,
+        creationTime: u.metadata.creationTime || null,
+        lastSignInTime: u.metadata.lastSignInTime || null,
+        lastLoginAt: new Date(),
+        createdAt: new Date(),
+        conversationCount: 0,
+        totalMessagesCount: 0,
+        totalTokensEstimated: 0,
+        totalCostUsd: 0,
+        totalCostVnd: 0
+      });
+    }
+
+    return { users: fallbackUsers, error: errMsg };
+  }
+}
+
+export async function searchUserMessages(userId: string, keyword: string): Promise<{ conversationId: string; conversationTitle: string; message: any }[]> {
+  if (!db || !keyword.trim()) return [];
+  const convs = await getUserConversationsForAdmin(userId);
+  const results: { conversationId: string; conversationTitle: string; message: any }[] = [];
+  const qLower = keyword.trim().toLowerCase();
+
+  for (const conv of convs) {
+    const msgs = await getConversationMessages(userId, conv.id);
+    for (const m of msgs) {
+      if (m.content && m.content.toLowerCase().includes(qLower)) {
+        results.push({
+          conversationId: conv.id,
+          conversationTitle: conv.title,
+          message: m
+        });
+      }
+    }
+  }
+  return results;
+}
+
+export async function getUserConversationsForAdmin(userId: string): Promise<ConversationItem[]> {
+  if (!db) return [];
+  try {
+    const convCol = collection(db, "users", userId, "conversations");
+    const q = query(convCol, orderBy("updatedAt", "desc"));
+    const snap = await getDocs(q);
+    const list: ConversationItem[] = [];
+    snap.forEach(d => {
+      const data = d.data();
+      list.push({
+        id: d.id,
+        title: data.title || "Cuộc trò chuyện",
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt || data.createdAt,
+        isHidden: data.isHidden,
+        rating: data.rating,
+        tags: data.tags,
+        adminNotes: data.adminNotes
+      });
+    });
+    return list;
+  } catch {
+    // Fallback nếu không có index updatedAt
+    const convCol = collection(db, "users", userId, "conversations");
+    const snap = await getDocs(convCol);
+    const list: ConversationItem[] = [];
+    snap.forEach(d => {
+      const data = d.data();
+      list.push({
+        id: d.id,
+        title: data.title || "Cuộc trò chuyện",
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt || data.createdAt,
+        isHidden: data.isHidden,
+        rating: data.rating,
+        tags: data.tags,
+        adminNotes: data.adminNotes
+      });
+    });
+    return list;
+  }
+}
+
+export async function saveConversationEvaluation(
+  userId: string,
+  conversationId: string,
+  evaluation: { rating?: number; tags?: string[]; adminNotes?: string }
+) {
+  if (!db) return;
+  const convRef = doc(db, "users", userId, "conversations", conversationId);
+  await updateDoc(convRef, {
+    ...evaluation,
+    evaluatedAt: serverTimestamp()
+  });
+}
+
+// ==============================================================================
+// INCIDENT LOGS & MODEL EVALUATION (Tab 2: Sự cố & Đánh giá)
+// ==============================================================================
+export interface IncidentRecord {
+  id: string;
+  userId: string;
+  userEmail?: string;
+  conversationId: string;
+  userQuery: string;
+  botResponse?: string;
+  errorType: 'model_timeout' | 'quota_exceeded' | 'refusal' | 'contraindicated_flag' | 'user_reported';
+  errorMessage?: string;
+  status: 'pending' | 'in_review' | 'resolved';
+  adminNotes?: string;
+  correctedResponse?: string;
+  createdAt: any;
+  resolvedAt?: any;
+}
+
+export async function reportIncident(
+  incident: Omit<IncidentRecord, "id" | "createdAt" | "status">
+): Promise<string | null> {
+  if (!db) return null;
+  try {
+    const colRef = collection(db, "incidents");
+    const docRef = await addDoc(colRef, {
+      ...incident,
+      status: "pending",
+      createdAt: serverTimestamp()
+    });
+    return docRef.id;
+  } catch (err) {
+    console.error("Lỗi ghi nhận incident:", err);
+    return null;
+  }
+}
+
+export function subscribeIncidents(callback: (list: IncidentRecord[]) => void) {
+  if (!db) {
+    callback([]);
+    return () => {};
+  }
+  const colRef = collection(db, "incidents");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const list: IncidentRecord[] = [];
+    snapshot.forEach(docSnap => {
+      const d = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        userId: d.userId || "",
+        userEmail: d.userEmail,
+        conversationId: d.conversationId || "",
+        userQuery: d.userQuery || "",
+        botResponse: d.botResponse,
+        errorType: d.errorType || "user_reported",
+        errorMessage: d.errorMessage,
+        status: d.status || "pending",
+        adminNotes: d.adminNotes,
+        correctedResponse: d.correctedResponse,
+        createdAt: d.createdAt,
+        resolvedAt: d.resolvedAt
+      });
+    });
+    callback(list);
+  }, (err) => {
+    console.error("Lỗi lắng nghe incidents:", err);
+    callback([]);
+  });
+}
+
+export async function updateIncident(incidentId: string, updates: Partial<IncidentRecord>) {
+  if (!db) return;
+  const docRef = doc(db, "incidents", incidentId);
+  const dataToUpdate: any = { ...updates };
+  if (updates.status === "resolved") {
+    dataToUpdate.resolvedAt = serverTimestamp();
+  }
+  await updateDoc(docRef, dataToUpdate);
+}
+
+export async function deleteIncident(incidentId: string) {
+  if (!db) return;
+  const docRef = doc(db, "incidents", incidentId);
+  await deleteDoc(docRef);
 }
 
 // Định dạng thời gian thân thiện (Ví dụ: 09:15 Hôm nay, Hôm qua, 17/11/2026)

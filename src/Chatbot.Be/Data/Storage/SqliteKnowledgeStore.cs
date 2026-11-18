@@ -40,6 +40,10 @@ public class SqliteKnowledgeStore
                 Title TEXT NOT NULL,
                 FileName TEXT NOT NULL,
                 FilePath TEXT NOT NULL,
+                RawFilePath TEXT NOT NULL DEFAULT '',
+                NormalizedFilePath TEXT NOT NULL DEFAULT '',
+                SourceUrl TEXT NULL,
+                SourceType TEXT NOT NULL DEFAULT 'upload',
                 FileSizeBytes INTEGER NOT NULL,
                 UploadedAtUtc TEXT NOT NULL,
                 ChunkCount INTEGER NOT NULL
@@ -59,6 +63,29 @@ public class SqliteKnowledgeStore
             CREATE INDEX IF NOT EXISTS idx_chunks_docid ON Chunks(DocumentId);
         ";
         cmd.ExecuteNonQuery();
+
+        // Migration an toàn cho database hiện có
+        string[] migrations = new[]
+        {
+            "ALTER TABLE Documents ADD COLUMN RawFilePath TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE Documents ADD COLUMN NormalizedFilePath TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE Documents ADD COLUMN SourceUrl TEXT NULL;",
+            "ALTER TABLE Documents ADD COLUMN SourceType TEXT NOT NULL DEFAULT 'upload';"
+        };
+
+        foreach (var mig in migrations)
+        {
+            try
+            {
+                using var migCmd = conn.CreateCommand();
+                migCmd.CommandText = mig;
+                migCmd.ExecuteNonQuery();
+            }
+            catch
+            {
+                // Cột đã tồn tại, bỏ qua an toàn
+            }
+        }
     }
 
     public async Task UpsertDocumentAsync(DocumentEntity doc, CancellationToken ct = default)
@@ -68,12 +95,16 @@ public class SqliteKnowledgeStore
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO Documents (Id, Title, FileName, FilePath, FileSizeBytes, UploadedAtUtc, ChunkCount)
-            VALUES (@Id, @Title, @FileName, @FilePath, @FileSizeBytes, @UploadedAtUtc, @ChunkCount)
+            INSERT INTO Documents (Id, Title, FileName, FilePath, RawFilePath, NormalizedFilePath, SourceUrl, SourceType, FileSizeBytes, UploadedAtUtc, ChunkCount)
+            VALUES (@Id, @Title, @FileName, @FilePath, @RawFilePath, @NormalizedFilePath, @SourceUrl, @SourceType, @FileSizeBytes, @UploadedAtUtc, @ChunkCount)
             ON CONFLICT(Id) DO UPDATE SET
                 Title = excluded.Title,
                 FileName = excluded.FileName,
                 FilePath = excluded.FilePath,
+                RawFilePath = excluded.RawFilePath,
+                NormalizedFilePath = excluded.NormalizedFilePath,
+                SourceUrl = excluded.SourceUrl,
+                SourceType = excluded.SourceType,
                 FileSizeBytes = excluded.FileSizeBytes,
                 UploadedAtUtc = excluded.UploadedAtUtc,
                 ChunkCount = excluded.ChunkCount;
@@ -82,6 +113,10 @@ public class SqliteKnowledgeStore
         cmd.Parameters.AddWithValue("@Title", doc.Title);
         cmd.Parameters.AddWithValue("@FileName", doc.FileName);
         cmd.Parameters.AddWithValue("@FilePath", doc.FilePath);
+        cmd.Parameters.AddWithValue("@RawFilePath", doc.RawFilePath ?? string.Empty);
+        cmd.Parameters.AddWithValue("@NormalizedFilePath", doc.NormalizedFilePath ?? string.Empty);
+        cmd.Parameters.AddWithValue("@SourceUrl", (object?)doc.SourceUrl ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@SourceType", doc.SourceType ?? "upload");
         cmd.Parameters.AddWithValue("@FileSizeBytes", doc.FileSizeBytes);
         cmd.Parameters.AddWithValue("@UploadedAtUtc", doc.UploadedAtUtc.ToString("o"));
         cmd.Parameters.AddWithValue("@ChunkCount", doc.ChunkCount);
@@ -105,24 +140,30 @@ public class SqliteKnowledgeStore
             await delCmd.ExecuteNonQueryAsync(ct);
         }
 
-        // Chèn các chunk mới
+        // Chèn các chunk mới bằng cách tái sử dụng 1 Prepared Command duy nhất
+        using var insCmd = conn.CreateCommand();
+        insCmd.Transaction = trans;
+        insCmd.CommandText = @"
+            INSERT INTO Chunks (Id, DocumentId, DocumentName, Content, StartOffset, EndOffset, Embedding)
+            VALUES (@Id, @DocId, @DocName, @Content, @StartOffset, @EndOffset, @Embedding);
+        ";
+        var pId = insCmd.Parameters.Add("@Id", SqliteType.Text);
+        var pDocId = insCmd.Parameters.Add("@DocId", SqliteType.Text);
+        var pDocName = insCmd.Parameters.Add("@DocName", SqliteType.Text);
+        var pContent = insCmd.Parameters.Add("@Content", SqliteType.Text);
+        var pStartOffset = insCmd.Parameters.Add("@StartOffset", SqliteType.Integer);
+        var pEndOffset = insCmd.Parameters.Add("@EndOffset", SqliteType.Integer);
+        var pEmbedding = insCmd.Parameters.Add("@Embedding", SqliteType.Blob);
+
         foreach (var chunk in chunks)
         {
-            using var insCmd = conn.CreateCommand();
-            insCmd.Transaction = trans;
-            insCmd.CommandText = @"
-                INSERT INTO Chunks (Id, DocumentId, DocumentName, Content, StartOffset, EndOffset, Embedding)
-                VALUES (@Id, @DocId, @DocName, @Content, @StartOffset, @EndOffset, @Embedding);
-            ";
-            insCmd.Parameters.AddWithValue("@Id", chunk.Id);
-            insCmd.Parameters.AddWithValue("@DocId", chunk.DocumentId);
-            insCmd.Parameters.AddWithValue("@DocName", chunk.DocumentName);
-            insCmd.Parameters.AddWithValue("@Content", chunk.Content);
-            insCmd.Parameters.AddWithValue("@StartOffset", chunk.StartOffset);
-            insCmd.Parameters.AddWithValue("@EndOffset", chunk.EndOffset);
-
-            byte[] embeddingBytes = FloatArrayToBytes(chunk.Embedding);
-            insCmd.Parameters.AddWithValue("@Embedding", embeddingBytes);
+            pId.Value = chunk.Id;
+            pDocId.Value = chunk.DocumentId;
+            pDocName.Value = chunk.DocumentName;
+            pContent.Value = chunk.Content;
+            pStartOffset.Value = chunk.StartOffset;
+            pEndOffset.Value = chunk.EndOffset;
+            pEmbedding.Value = FloatArrayToBytes(chunk.Embedding);
 
             await insCmd.ExecuteNonQueryAsync(ct);
         }
@@ -163,7 +204,7 @@ public class SqliteKnowledgeStore
         await conn.OpenAsync(ct);
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, FileName, FilePath, FileSizeBytes, UploadedAtUtc, ChunkCount FROM Documents ORDER BY UploadedAtUtc DESC;";
+        cmd.CommandText = "SELECT Id, Title, FileName, FilePath, RawFilePath, NormalizedFilePath, SourceUrl, SourceType, FileSizeBytes, UploadedAtUtc, ChunkCount FROM Documents ORDER BY UploadedAtUtc DESC;";
         using var reader = await cmd.ExecuteReaderAsync(ct);
 
         while (await reader.ReadAsync(ct))
@@ -174,9 +215,13 @@ public class SqliteKnowledgeStore
                 Title = reader.GetString(1),
                 FileName = reader.GetString(2),
                 FilePath = reader.GetString(3),
-                FileSizeBytes = reader.GetInt64(4),
-                UploadedAtUtc = DateTime.Parse(reader.GetString(5)),
-                ChunkCount = reader.GetInt32(6)
+                RawFilePath = !reader.IsDBNull(4) ? reader.GetString(4) : string.Empty,
+                NormalizedFilePath = !reader.IsDBNull(5) ? reader.GetString(5) : string.Empty,
+                SourceUrl = !reader.IsDBNull(6) ? reader.GetString(6) : null,
+                SourceType = !reader.IsDBNull(7) ? reader.GetString(7) : "upload",
+                FileSizeBytes = reader.GetInt64(8),
+                UploadedAtUtc = DateTime.Parse(reader.GetString(9)),
+                ChunkCount = reader.GetInt32(10)
             });
         }
         return list;
@@ -188,7 +233,7 @@ public class SqliteKnowledgeStore
         await conn.OpenAsync(ct);
 
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, FileName, FilePath, FileSizeBytes, UploadedAtUtc, ChunkCount FROM Documents WHERE Id = @Id LIMIT 1;";
+        cmd.CommandText = "SELECT Id, Title, FileName, FilePath, RawFilePath, NormalizedFilePath, SourceUrl, SourceType, FileSizeBytes, UploadedAtUtc, ChunkCount FROM Documents WHERE Id = @Id LIMIT 1;";
         cmd.Parameters.AddWithValue("@Id", docId);
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -200,9 +245,13 @@ public class SqliteKnowledgeStore
                 Title = reader.GetString(1),
                 FileName = reader.GetString(2),
                 FilePath = reader.GetString(3),
-                FileSizeBytes = reader.GetInt64(4),
-                UploadedAtUtc = DateTime.Parse(reader.GetString(5)),
-                ChunkCount = reader.GetInt32(6)
+                RawFilePath = !reader.IsDBNull(4) ? reader.GetString(4) : string.Empty,
+                NormalizedFilePath = !reader.IsDBNull(5) ? reader.GetString(5) : string.Empty,
+                SourceUrl = !reader.IsDBNull(6) ? reader.GetString(6) : null,
+                SourceType = !reader.IsDBNull(7) ? reader.GetString(7) : "upload",
+                FileSizeBytes = reader.GetInt64(8),
+                UploadedAtUtc = DateTime.Parse(reader.GetString(9)),
+                ChunkCount = reader.GetInt32(10)
             };
         }
         return null;

@@ -4,7 +4,7 @@
 FROM node:22-alpine AS build-fe
 WORKDIR /app/fe
 
-# Hỗ trợ truyền cấu hình Firebase tùy chỉnh qua Build Args nếu cần
+# Hỗ trợ truyền cấu hình Firebase tùy chỉnh qua Build Args
 ARG VITE_FIREBASE_API_KEY
 ARG VITE_FIREBASE_AUTH_DOMAIN
 ARG VITE_FIREBASE_PROJECT_ID
@@ -35,7 +35,7 @@ RUN npm run build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-be
 WORKDIR /app
 
-# Copy file project Chatbot.Be để restore dependencies
+# Copy file project Chatbot.Be để restore dependencies (tận dụng Docker cache)
 COPY src/Chatbot.Be/*.csproj ./src/Chatbot.Be/
 RUN dotnet restore ./src/Chatbot.Be/Chatbot.Be.csproj
 
@@ -49,8 +49,11 @@ RUN dotnet publish ./src/Chatbot.Be/Chatbot.Be.csproj -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
-# Tạo các thư mục chứa dữ liệu và tài liệu y khoa
-RUN mkdir -p /app/data/documents /app/data/index
+# Cài đặt curl phục vụ healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Tạo các thư mục lưu trữ dữ liệu y văn
+RUN mkdir -p /app/storage/documents/raw /app/storage/documents/normalized /app/storage/index
 
 # Copy ứng dụng .NET đã publish
 COPY --from=build-be /app/publish .
@@ -62,5 +65,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 ENV PORT=10000
 ENV ASPNETCORE_URLS=http://+:10000
 EXPOSE 10000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:10000/api/health || exit 1
 
 ENTRYPOINT ["dotnet", "Chatbot.Be.dll"]

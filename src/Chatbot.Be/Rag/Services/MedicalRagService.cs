@@ -1,3 +1,4 @@
+using Chatbot.Common;
 using Chatbot.Data.Models;
 using Chatbot.Data.Repositories;
 using Chatbot.Data.Text;
@@ -57,34 +58,36 @@ public class MedicalRagService
             return;
 
         var rawChunks = OffsetChunker.ChunkWithOffsets(fullText);
-        var chunkEntities = new List<ChunkEntity>(rawChunks.Count);
+        var chunkEntities = new ChunkEntity[rawChunks.Count];
 
-        for (int i = 0; i < rawChunks.Count; i++)
-        {
-            var raw = rawChunks[i];
-            ct.ThrowIfCancellationRequested();
+        // Tăng tốc tạo vector song song 4 luồng đồng thời
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, rawChunks.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
+            async (i, token) =>
+            {
+                var raw = rawChunks[i];
+                float[] vector = Array.Empty<float>();
+                try
+                {
+                    vector = await _embeddingClient.GenerateEmbeddingAsync(raw.Content, token);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Cảnh báo Embedding] Không thể tạo vector cho chunk {i}: {ex.Message}");
+                }
 
-            float[] vector = Array.Empty<float>();
-            try
-            {
-                vector = await _embeddingClient.GenerateEmbeddingAsync(raw.Content, ct);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Cảnh báo Embedding] Không thể tạo vector cho chunk {i}: {ex.Message}");
-            }
-
-            chunkEntities.Add(new ChunkEntity
-            {
-                Id = $"{doc.Id}_c{i:D4}",
-                DocumentId = doc.Id,
-                DocumentName = doc.FileName,
-                Content = raw.Content,
-                StartOffset = raw.StartOffset,
-                EndOffset = raw.EndOffset,
-                Embedding = vector
+                chunkEntities[i] = new ChunkEntity
+                {
+                    Id = $"{doc.Id}_c{i:D4}",
+                    DocumentId = doc.Id,
+                    DocumentName = doc.FileName,
+                    Content = raw.Content,
+                    StartOffset = raw.StartOffset,
+                    EndOffset = raw.EndOffset,
+                    Embedding = vector
+                };
             });
-        }
 
         await _documentRepo.SaveChunksAsync(doc.Id, chunkEntities, ct);
 
@@ -153,7 +156,7 @@ public class MedicalRagService
             if (_searchService.TotalChunks > 0)
             {
                 var queryVector = await _embeddingClient.GenerateEmbeddingAsync(userQuery, ct);
-                searchHits = await _searchService.SearchAsync(queryVector, topK: 3, minScore: 0.38f, ct);
+                searchHits = await _searchService.SearchAsync(queryVector, topK: RagConstants.DefaultTopK, minScore: RagConstants.DefaultMinRelevanceScore, ct);
             }
 
             // 2. Đối soát thực thể / từ khóa hoạt chất trong câu hỏi với nội dung Chunk
@@ -179,22 +182,7 @@ public class MedicalRagService
                     );
                 }
 
-                int citeIndex = 1;
-                foreach (var hit in relevantHits)
-                {
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = $"cite_{citeIndex++}",
-                        DocumentId = hit.Chunk.DocumentId,
-                        DocumentName = hit.Chunk.DocumentName,
-                        StartOffset = hit.Chunk.StartOffset,
-                        EndOffset = hit.Chunk.EndOffset,
-                        Snippet = hit.Chunk.Content,
-                        RelevanceScore = hit.Score,
-                        SourceType = "internal"
-                    });
-                }
-
+                citations.AddRange(BuildInternalCitations(relevantHits));
                 var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
                 systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks);
                 safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
@@ -213,22 +201,7 @@ public class MedicalRagService
                     );
                 }
 
-                int citeIndex = 1;
-                foreach (var hit in relevantHits)
-                {
-                    citations.Add(new CitationItem
-                    {
-                        CitationId = $"cite_{citeIndex++}",
-                        DocumentId = hit.Chunk.DocumentId,
-                        DocumentName = hit.Chunk.DocumentName,
-                        StartOffset = hit.Chunk.StartOffset,
-                        EndOffset = hit.Chunk.EndOffset,
-                        Snippet = hit.Chunk.Content,
-                        RelevanceScore = hit.Score,
-                        SourceType = "internal"
-                    });
-                }
-
+                citations.AddRange(BuildInternalCitations(relevantHits));
                 var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
                 string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
                 string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
@@ -243,24 +216,9 @@ public class MedicalRagService
             {
                 // CHẾ ĐỘ 3: MỞ RỘNG (Nghiên cứu y văn chính thống quốc tế tự do)
                 var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-
-                int citeIndex = 1;
                 if (relevantChunks.Any())
                 {
-                    foreach (var hit in relevantHits)
-                    {
-                        citations.Add(new CitationItem
-                        {
-                            CitationId = $"cite_{citeIndex++}",
-                            DocumentId = hit.Chunk.DocumentId,
-                            DocumentName = hit.Chunk.DocumentName,
-                            StartOffset = hit.Chunk.StartOffset,
-                            EndOffset = hit.Chunk.EndOffset,
-                            Snippet = hit.Chunk.Content,
-                            RelevanceScore = hit.Score,
-                            SourceType = "internal"
-                        });
-                    }
+                    citations.AddRange(BuildInternalCitations(relevantHits));
                 }
 
                 string primaryDrug = ExtractPrimaryDrugName(userQuery, distinctiveKeywords);
@@ -287,9 +245,11 @@ public class MedicalRagService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[RAG Lỗi] {ex.Message}");
+            var formatted = LlmErrorFormatter.Format(ex, "LactaMed AI", mode);
+            Console.WriteLine($"[RAG Lỗi Chuẩn Hóa] {formatted.AdminSummary}");
+
             return new RagQueryResult(
-                Stream: ToAsyncEnumerable($"⚠️ Hệ thống tư vấn y tế đang quá tải hoặc tạm thời gián đoạn kết nối ({ex.Message}). Bạn vui lòng thử lại sau giây lát, hoặc tham khảo trực tiếp ý kiến bác sĩ/dược sĩ nếu cần tư vấn gấp." + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                Stream: ToAsyncEnumerable($"⚠️ {formatted.UserMessage}" + StrictMedicalPromptBuilder.MandatoryDisclaimer),
                 Citations: new List<CitationItem>(),
                 SafetyLevel: "None",
                 IsRefusal: true,
@@ -461,6 +421,22 @@ public class MedicalRagService
             "zithromax" => "azithromycin",
             _ => lower
         };
+    }
+
+    private static List<CitationItem> BuildInternalCitations(IEnumerable<(ChunkEntity Chunk, float Score)> hits)
+    {
+        int citeIndex = 1;
+        return hits.Select(h => new CitationItem
+        {
+            CitationId = $"cite_{citeIndex++}",
+            DocumentId = h.Chunk.DocumentId,
+            DocumentName = h.Chunk.DocumentName,
+            StartOffset = h.Chunk.StartOffset,
+            EndOffset = h.Chunk.EndOffset,
+            Snippet = h.Chunk.Content,
+            RelevanceScore = h.Score,
+            SourceType = "internal"
+        }).ToList();
     }
 
     private static async IAsyncEnumerable<string> StreamWithDisclaimerAsync(

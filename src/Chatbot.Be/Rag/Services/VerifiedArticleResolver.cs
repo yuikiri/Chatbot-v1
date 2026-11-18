@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Chatbot.Common;
 using Chatbot.Data.Models;
 
 namespace Chatbot.Rag.Services;
@@ -7,7 +8,17 @@ namespace Chatbot.Rag.Services;
 public class VerifiedArticleResolver
 {
     private readonly HttpClient _httpClient;
+    private const int MaxCacheEntries = 300;
     private static readonly ConcurrentDictionary<string, List<CitationItem>> Cache = new(StringComparer.OrdinalIgnoreCase);
+
+    private static void CacheSet(string key, List<CitationItem> items)
+    {
+        if (Cache.Count >= MaxCacheEntries)
+        {
+            Cache.Clear();
+        }
+        Cache[key] = items;
+    }
 
     // Danh mục các chuyên luận đã được kiểm chứng cố định trên LactMed (NCBI Bookshelf) và e-lactancia
     private static readonly Dictionary<string, (string nbk, string pubmedId, string elactanciaSlug, string titleVi)> VerifiedMonographs = new(StringComparer.OrdinalIgnoreCase)
@@ -99,7 +110,7 @@ public class VerifiedArticleResolver
                 });
             }
 
-            Cache[normalizedDrug] = results;
+            CacheSet(normalizedDrug, results);
             return results;
         }
 
@@ -107,7 +118,7 @@ public class VerifiedArticleResolver
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(3)); // Timeout 3s để không làm trễ câu trả lời
+            cts.CancelAfter(TimeSpan.FromSeconds(RagConstants.VerifiedArticleTimeoutSeconds));
 
             string searchUrl = $"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={Uri.EscapeDataString(normalizedDrug)}+lactmed&retmode=json";
             var searchJson = await _httpClient.GetStringAsync(searchUrl, cts.Token);
@@ -214,7 +225,7 @@ public class VerifiedArticleResolver
             });
         }
 
-        Cache[normalizedDrug] = results;
+        CacheSet(normalizedDrug, results);
         return results;
     }
 }

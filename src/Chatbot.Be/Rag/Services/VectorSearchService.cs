@@ -1,4 +1,5 @@
 using System.Numerics.Tensors;
+using Chatbot.Common;
 using Chatbot.Data.Models;
 using Chatbot.Data.Repositories;
 
@@ -63,16 +64,20 @@ public class VectorSearchService
 
     public int TotalChunks => _qdrantService != null && _totalQdrantPoints > 0 ? _totalQdrantPoints : _cachedChunks.Count;
 
-    public async Task<List<(ChunkEntity Chunk, float Score)>> SearchAsync(float[] queryEmbedding, int topK = 3, float minScore = 0.35f, CancellationToken ct = default)
+    public async Task<List<(ChunkEntity Chunk, float Score)>> SearchAsync(
+        float[] queryVector, 
+        int topK = RagConstants.DefaultTopK, 
+        float minScore = RagConstants.DefaultMinRelevanceScore, 
+        CancellationToken ct = default)
     {
-        if (queryEmbedding == null || queryEmbedding.Length == 0)
+        if (queryVector == null || queryVector.Length == 0)
             return new List<(ChunkEntity Chunk, float Score)>();
 
         if (_qdrantService != null)
         {
             try
             {
-                var qdrantHits = await _qdrantService.SearchAsync(queryEmbedding, topK, minScore, ct);
+                var qdrantHits = await _qdrantService.SearchAsync(queryVector, topK, minScore, ct);
                 if (qdrantHits.Count > 0)
                 {
                     return qdrantHits;
@@ -84,15 +89,18 @@ public class VectorSearchService
             }
         }
 
-        return Search(queryEmbedding, topK, minScore);
+        return Search(queryVector, topK, minScore);
     }
 
-    public List<(ChunkEntity Chunk, float Score)> Search(float[] queryEmbedding, int topK = 3, float minScore = 0.35f)
+    public List<(ChunkEntity Chunk, float Score)> Search(
+        float[] queryEmbedding, 
+        int topK = RagConstants.DefaultTopK, 
+        float minScore = RagConstants.DefaultMinRelevanceScore)
     {
         if (queryEmbedding == null || queryEmbedding.Length == 0 || _cachedChunks.Count == 0)
             return new List<(ChunkEntity Chunk, float Score)>();
 
-        var results = new List<(ChunkEntity Chunk, float Score)>(_cachedChunks.Count);
+        var results = new List<(ChunkEntity Chunk, float Score)>(Math.Min(_cachedChunks.Count, topK * 4));
         ReadOnlySpan<float> querySpan = queryEmbedding;
 
         foreach (var chunk in _cachedChunks)

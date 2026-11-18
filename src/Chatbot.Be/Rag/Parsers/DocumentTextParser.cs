@@ -4,6 +4,11 @@ namespace Chatbot.Rag.Parsers;
 
 public static class DocumentTextParser
 {
+    private static readonly HashSet<string> SupportedTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".json", ".csv", ".html", ".htm"
+    };
+
     public static async Task<string> ExtractTextAsync(string filePath, CancellationToken ct = default)
     {
         if (!File.Exists(filePath))
@@ -11,7 +16,7 @@ public static class DocumentTextParser
 
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
 
-        if (ext == ".txt" || ext == ".md" || ext == ".json")
+        if (SupportedTextExtensions.Contains(ext))
         {
             return await File.ReadAllTextAsync(filePath, ct);
         }
@@ -35,7 +40,6 @@ public static class DocumentTextParser
             }, ct);
         }
 
-        // Fallback đọc dạng text
-        return await File.ReadAllTextAsync(filePath, ct);
+        throw new NotSupportedException($"Định dạng tệp '{ext}' không được hỗ trợ. Hệ thống chỉ hỗ trợ các tài liệu y khoa dạng văn bản (.txt, .md, .pdf, .json, .csv, .html).");
     }
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { CitationModal } from "./components/CitationModal";
-import { AdminModal } from "./components/AdminModal";
+import { AdminPortal } from "./components/AdminPortal";
 import { AuthModal } from "./components/AuthModal";
 import { 
   type ChatMessage, 
@@ -20,6 +20,7 @@ import {
   saveChatMessage,
   renameConversation,
   hideConversation,
+  syncUserProfile,
   type ConversationItem
 } from "./services/firebase";
 import type { User } from "firebase/auth";
@@ -30,6 +31,7 @@ export function App() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [currentView, setCurrentView] = useState<"chat" | "admin">("chat");
 
   // 3 Chế độ co giãn (Nghiêm ngặt, Cân bằng, Mở rộng)
   const [ragMode, setRagMode] = useState<RagMode>(() => {
@@ -44,7 +46,6 @@ export function App() {
 
   // Modals state
   const [activeCitation, setActiveCitation] = useState<CitationItem | null>(null);
-  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isOpenMobile, setIsOpenMobile] = useState(false);
 
@@ -52,7 +53,9 @@ export function App() {
   useEffect(() => {
     const unsubAuth = subscribeAuth((user) => {
       setCurrentUser(user);
-      if (!user) {
+      if (user) {
+        syncUserProfile(user);
+      } else {
         // LẬP TỨC DỌN SẠCH KHUNG CHAT KHI ĐĂNG XUẤT
         setActiveConvId(null);
         setMessages([]);
@@ -241,8 +244,12 @@ export function App() {
     );
   };
 
+  if (currentView === "admin") {
+    return <AdminPortal onBack={() => setCurrentView("chat")} />;
+  }
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-[100dvh] h-screen w-screen overflow-hidden bg-slate-50 font-sans">
       <Sidebar
         conversations={conversations}
         activeConvId={activeConvId}
@@ -250,7 +257,7 @@ export function App() {
         onNewChat={handleNewChat}
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenAdmin={() => setIsAdminOpen(true)}
+        onOpenAdmin={() => setCurrentView("admin")}
         onLogout={handleLogout}
         onRenameConv={handleRenameConv}
         onHideConv={handleHideConv}
@@ -266,18 +273,15 @@ export function App() {
         onToggleMobileMenu={() => setIsOpenMobile(!isOpenMobile)}
         currentMode={ragMode}
         onModeChange={handleModeChange}
+        currentUser={currentUser}
+        conversationId={activeConvId || undefined}
+        onOpenAdmin={() => setCurrentView("admin")}
       />
 
       {/* Modal Bôi đậm Đoạn Trích Dẫn Gốc hoặc Nguồn Kiểm Chứng Trực Tuyến */}
       <CitationModal
         citation={activeCitation}
         onClose={() => setActiveCitation(null)}
-      />
-
-      {/* Modal Quản trị Admin: Upload, Cào URL & Xóa Tài Liệu */}
-      <AdminModal
-        isOpen={isAdminOpen}
-        onClose={() => setIsAdminOpen(false)}
       />
 
       {/* Modal Đăng nhập / Đăng ký Firebase */}

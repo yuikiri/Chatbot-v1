@@ -28,6 +28,7 @@ __pycache__/
 *.db-wal
 Chatbot.Data/index/*.db
 src/Chatbot.Be/data/index/*.db
+src/Chatbot.Be/storage/index/*.db
 graphify-out/
 
 # IDE and Editor files

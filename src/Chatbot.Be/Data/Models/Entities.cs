@@ -6,6 +6,10 @@ public class DocumentEntity
     public string Title { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
+    public string RawFilePath { get; set; } = string.Empty;
+    public string NormalizedFilePath { get; set; } = string.Empty;
+    public string? SourceUrl { get; set; }
+    public string SourceType { get; set; } = "upload"; // "upload" | "crawl"
     public long FileSizeBytes { get; set; }
     public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;
     public int ChunkCount { get; set; }
@@ -35,3 +39,7 @@ public class CitationItem
     public string? Url { get; set; }
     public string? VerifiedOrg { get; set; }
 }
+
+public record ChatRequest(string Message, string? Mode = "strict");
+public record CrawlDocumentRequest(string Url);
+public record UpdateModelConfigRequest(string? Provider, string? Model, string? BaseUrl, string? ApiKey, string? EmbeddingModel);

@@ -1,9 +1,12 @@
-name: Build, Push to Docker Hub & Deploy to VPS
+name: Build, Push to Docker Hub & Deploy Chatbot v1 to VPS
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'Labs/Components/Chatbot_v1/**'
+      - '.github/workflows/chatbot-deploy.yml'
   workflow_dispatch:
 
 jobs:
@@ -26,10 +29,18 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./Labs/Components/Chatbot_v1
+          file: ./Labs/Components/Chatbot_v1/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/chatbot_v1:latest
+          build-args: |
+            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+            VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+            VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+            VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+            VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
 
   deploy-to-vps:
     name: Deploy to VPS via SSH
@@ -37,24 +48,48 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Đồng bộ file docker-compose.yml lên VPS
+      - name: Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
+          source: 'Labs/Components/Chatbot_v1/docker-compose.yml'
+          target: '~/yuikiri/chatbot_v1'
+          strip_components: 3
+
       - name: Execute Deploy Script on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
           script: |
-            # 1. Đi vào thư mục chứa docker-compose trên VPS
-            mkdir -p ~/yuikiri/chatbot_v1/data/documents ~/yuikiri/chatbot_v1/data/index
+            # 1. Tạo các thư mục lưu trữ dữ liệu y khoa nếu chưa có
+            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/documents/raw
+            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/documents/normalized
+            mkdir -p ~/yuikiri/chatbot_v1/src/Chatbot.Be/storage/index
             cd ~/yuikiri/chatbot_v1
 
-            # 2. Kéo image mới nhất từ Docker Hub về
+            # 2. Đăng nhập Docker Hub nếu cần kéo private image
+            if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            fi
+
+            # 3. Kéo image mới nhất từ Docker Hub về
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chatbot_v1:latest
 
-            # 3. Khởi động lại container với image mới
+            # 4. Khởi động lại container với image mới
             docker compose down || true
             docker compose up -d
 
-            # 4. Xóa các image cũ không còn dùng (giải phóng dung lượng ổ cứng VPS)
+            # 5. Dọn dẹp image cũ không dùng để tiết kiệm ổ cứng VPS
             docker image prune -f

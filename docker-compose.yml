@@ -4,26 +4,61 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-}
+        - VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN:-}
+        - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID:-}
+        - VITE_FIREBASE_STORAGE_BUCKET=${VITE_FIREBASE_STORAGE_BUCKET:-}
+        - VITE_FIREBASE_MESSAGING_SENDER_ID=${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-}
+        - VITE_FIREBASE_MEASUREMENT_ID=${VITE_FIREBASE_MEASUREMENT_ID:-}
     container_name: chatbot_v1_app
+    restart: unless-stopped
     ports:
       - "${PORT:-10000}:10000"
+    env_file:
+      - .env
     environment:
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
       - PORT=10000
+      - ASPNETCORE_URLS=http://+:10000
       - LLM__Provider=${LLM_PROVIDER:-gemini}
       - LLM__BaseUrl=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
       - LLM__ApiKey=${LLM_API_KEY:-}
-      - LLM__Model=${LLM_MODEL:-gemini-3.5-flash-lite}
-      - LLM__EmbeddingModel=${LLM_EMBEDDING_MODEL:-gemini-embedding-001}
+      - LLM__Model=${LLM_MODEL:-gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-2.5-flash-lite}
+      - LLM__EmbeddingModel=${LLM_EMBEDDING_MODEL:-gemini-embedding-001,gemini-embedding-002}
       - Admin__SecretKey=${ADMIN_SECRET_KEY:-123123123}
-      - Storage__DocumentsPath=/app/data/documents
-      - Storage__DbPath=/app/data/index/knowledge.db
+      - Storage__DocumentsPath=/app/storage/documents
+      - Storage__DbPath=/app/storage/index/knowledge.db
       - VECTOR_STORE_PROVIDER=${VECTOR_STORE_PROVIDER:-qdrant}
       - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-medical_knowledge}
       - QDRANT_VECTOR_SIZE=${QDRANT_VECTOR_SIZE:-3072}
     volumes:
-      - ${STORAGE_DOCUMENTS_DIR:-./src/Chatbot.Be/data/documents}:/app/data/documents
-      - ${STORAGE_INDEX_DIR:-./src/Chatbot.Be/data/index}:/app/data/index
+      - ${STORAGE_DOCUMENTS_DIR:-./src/Chatbot.Be/storage/documents}:/app/storage/documents
+      - ${STORAGE_INDEX_DIR:-./src/Chatbot.Be/storage/index}:/app/storage/index
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Dịch vụ Qdrant Vector Database chạy cục bộ (tùy chọn)
+  # Kích hoạt khi không dùng Qdrant Cloud bằng lệnh:
+  # docker compose --profile local-qdrant up -d
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    container_name: chatbot_v1_qdrant
     restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_local_data:/qdrant/storage
+    profiles:
+      - local-qdrant
+
+volumes:
+  qdrant_local_data:

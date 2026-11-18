@@ -34,6 +34,19 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
 
   const isExternal = sourceType === "external" || Boolean(url && (!docId || String(docId).startsWith("ext_")));
 
+  const formatDocumentTitle = (rawName: string) => {
+    if (!rawName) return "Chuyên luận Y khoa";
+    let clean = rawName.replace(/\.(txt|md|pdf|json|html|htm)$/i, "");
+    if (clean.startsWith("web_")) {
+      clean = clean.replace(/^web_/, "").replace(/_\d{8}_\d{4}$/, "");
+    }
+    clean = clean.replace(/[_-]+/g, " ").trim();
+    clean = clean.split(" ").map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : "").join(" ");
+    return clean.toLowerCase().startsWith("chuyên luận") ? clean : `Chuyên luận ${clean}`;
+  };
+
+  const displayDocName = isExternal ? (citation?.documentName || "Nguồn y văn quốc tế") : formatDocumentTitle(docName);
+
   useEffect(() => {
     if (!citation) {
       setDoc(null);
@@ -143,8 +156,8 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2.5 sm:p-5 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
         {/* Header Modal */}
         <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-200 ${isExternal ? "bg-indigo-50/80" : "bg-teal-50/80"}`}>
           <div className="flex items-center space-x-3 truncate">
@@ -153,7 +166,7 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
             </div>
             <div className="truncate">
               <h3 className="text-base font-bold text-gray-900 flex flex-wrap items-center gap-2">
-                <span className="truncate max-w-xs sm:max-w-md">{docName}</span>
+                <span className="truncate max-w-xs sm:max-w-md">{displayDocName}</span>
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${
                   isExternal 
                     ? "bg-indigo-100 text-indigo-800 border border-indigo-200" 

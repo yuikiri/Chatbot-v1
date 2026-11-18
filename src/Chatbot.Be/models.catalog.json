@@ -1,0 +1,285 @@
+{
+  "googleStudio": {
+    "chatModels": [
+      {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash Lite",
+        "category": "Text-out models",
+        "rpm": "3 / 15",
+        "tpm": "4.42K / 250K",
+        "rpd": "29 / 500",
+        "desc": "Tối ưu tốc độ, chi phí thấp, hạn mức cao 500 RPD",
+        "recommended": true,
+        "defaultPriority": 1,
+        "tag": "Khuyên dùng - Cascade 1"
+      },
+      {
+        "id": "gemini-3.1-flash-lite",
+        "name": "Gemini 3.1 Flash Lite",
+        "category": "Text-out models",
+        "rpm": "0 / 15",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 500",
+        "desc": "Thế hệ 3.1 Flash Lite, 500 RPD, độ trễ cực thấp",
+        "recommended": true,
+        "defaultPriority": 2,
+        "tag": "Dự phòng - Cascade 2"
+      },
+      {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "category": "Text-out models",
+        "rpm": "0 / 5",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 20",
+        "desc": "Chất lượng lâm sàng cao, phân tích y văn chính xác",
+        "recommended": true,
+        "defaultPriority": 3,
+        "tag": "Chất lượng cao - Cascade 3"
+      },
+      {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Gemini 2.5 Flash Lite",
+        "category": "Text-out models",
+        "rpm": "0 / 10",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 20",
+        "desc": "Phiên bản rút gọn của 2.5 Flash, 10 RPM",
+        "recommended": false,
+        "defaultPriority": 4,
+        "tag": "Dự phòng 2.5"
+      },
+      {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "category": "Text-out models",
+        "rpm": "2 / 5",
+        "tpm": "4 / 250K",
+        "rpd": "2 / 20",
+        "desc": "Thế hệ 3.8 Flash mới nhất, suy luận logic mạnh mẽ",
+        "recommended": false,
+        "defaultPriority": 5,
+        "tag": "Thế hệ mới 3.8"
+      },
+      {
+        "id": "gemini-3.6-flash",
+        "name": "Gemini 3.6 Flash",
+        "category": "Text-out models",
+        "rpm": "0 / 5",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 20",
+        "desc": "Bản Flash 3.6 ổn định, cân bằng tốc độ",
+        "recommended": false,
+        "defaultPriority": 6,
+        "tag": "3.6 Flash"
+      },
+      {
+        "id": "gemini-3-flash",
+        "name": "Gemini 3 Flash",
+        "category": "Text-out models",
+        "rpm": "0 / 5",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 20",
+        "desc": "Thế hệ 3.0 Flash",
+        "recommended": false,
+        "defaultPriority": 7,
+        "tag": "3.0 Flash"
+      },
+      {
+        "id": "gemini-2-flash",
+        "name": "Gemini 2 Flash",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Thế hệ 2.0 Flash đa nhiệm",
+        "recommended": false,
+        "defaultPriority": 8,
+        "tag": "2.0 Flash"
+      },
+      {
+        "id": "gemini-2-flash-lite",
+        "name": "Gemini 2 Flash Lite",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Thế hệ 2.0 Flash Lite",
+        "recommended": false,
+        "defaultPriority": 9,
+        "tag": "2.0 Flash Lite"
+      },
+      {
+        "id": "gemini-2.5-pro",
+        "name": "Gemini 2.5 Pro",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Mô hình Pro cho các ca bệnh khó, đa nguồn tài liệu",
+        "recommended": false,
+        "defaultPriority": 10,
+        "tag": "Chuyên sâu Pro"
+      },
+      {
+        "id": "gemini-3.1-pro",
+        "name": "Gemini 3.1 Pro",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Thế hệ 3.1 Pro suy luận y tế phức tạp",
+        "recommended": false,
+        "defaultPriority": 11,
+        "tag": "3.1 Pro"
+      },
+      {
+        "id": "gemini-4-hydrogen",
+        "name": "Gemini 4 Hydrogen",
+        "category": "Text-out models",
+        "rpm": "0 / 5",
+        "tpm": "0 / 250K",
+        "rpd": "0 / 20",
+        "desc": "Mô hình thử nghiệm thế hệ 4 (Hydrogen)",
+        "recommended": false,
+        "defaultPriority": 12,
+        "tag": "Thử nghiệm Gen 4"
+      },
+      {
+        "id": "gemini-4-argon",
+        "name": "Gemini 4 Argon",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Mô hình thế hệ 4 (Argon)",
+        "recommended": false,
+        "defaultPriority": 13,
+        "tag": "Gen 4"
+      },
+      {
+        "id": "gemini-4-carbon",
+        "name": "Gemini 4 Carbon",
+        "category": "Text-out models",
+        "rpm": "0 / 0",
+        "tpm": "0 / 0",
+        "rpd": "0 / 0",
+        "desc": "Mô hình thế hệ 4 (Carbon)",
+        "recommended": false,
+        "defaultPriority": 14,
+        "tag": "Gen 4"
+      },
+      {
+        "id": "gemini-1.5-flash",
+        "name": "Gemini 1.5 Flash",
+        "category": "Text-out models",
+        "rpm": "0 / 15",
+        "tpm": "0 / 1M",
+        "rpd": "0 / 1500",
+        "desc": "Ổn định cao, ngữ cảnh 1M tokens",
+        "recommended": false,
+        "defaultPriority": 15,
+        "tag": "1.5 Flash 1M"
+      },
+      {
+        "id": "gemini-1.5-pro",
+        "name": "Gemini 1.5 Pro",
+        "category": "Text-out models",
+        "rpm": "0 / 2",
+        "tpm": "0 / 32K",
+        "rpd": "0 / 50",
+        "desc": "Phân tích y khoa đa nguồn, suy luận sâu",
+        "recommended": false,
+        "defaultPriority": 16,
+        "tag": "1.5 Pro"
+      }
+    ],
+    "embeddingModels": [
+      {
+        "id": "gemini-embedding-001",
+        "name": "Gemini Embedding 1",
+        "category": "Other models",
+        "rpm": "66 / 100",
+        "tpm": "20.07K / 30K",
+        "rpd": "197 / 1K",
+        "dimensions": 3072,
+        "desc": "Chuẩn vector 3072 chiều khớp hoàn hảo với Qdrant Cloud",
+        "active": true,
+        "tag": "Khuyên dùng - Chuẩn Qdrant"
+      },
+      {
+        "id": "gemini-embedding-002",
+        "name": "Gemini Embedding 2",
+        "category": "Other models",
+        "rpm": "0 / 100",
+        "tpm": "0 / 30K",
+        "rpd": "0 / 1K",
+        "dimensions": 3072,
+        "desc": "Model Embedding thế hệ 2 của Google AI Studio",
+        "active": false,
+        "tag": "Dự phòng"
+      }
+    ],
+    "otherCategories": [
+      {
+        "category": "Decisions API",
+        "models": [
+          { "id": "gemini-decision-1", "name": "Gemini Decision 1", "rpm": "0 / 200", "tpm": "0 / 50K", "rpd": "0 / 10K" }
+        ]
+      },
+      {
+        "category": "Agents",
+        "models": [
+          { "id": "antigravity", "name": "Antigravity", "rpm": "0 / 60", "tpm": "0 / 100K", "rpd": "0 / 100" },
+          { "id": "deep-research-pro-preview", "name": "Deep Research Pro Preview", "rpm": "0 / 0", "tpm": "0 / 0", "rpd": "0 / 0" }
+        ]
+      },
+      {
+        "category": "Gemma Series",
+        "models": [
+          { "id": "gemma-4-26b", "name": "Gemma 4 26B", "rpm": "0 / 30", "tpm": "0 / 16K", "rpd": "0 / 14.4K" },
+          { "id": "gemma-4-31b", "name": "Gemma 4 31B", "rpm": "0 / 30", "tpm": "0 / 16K", "rpd": "0 / 14.4K" }
+        ]
+      },
+      {
+        "category": "Live API",
+        "models": [
+          { "id": "gemini-2.5-flash-native-audio", "name": "Gemini 2.5 Flash Native Audio Dialog", "rpm": "0 / Unlimited", "tpm": "0 / 1M", "rpd": "0 / Unlimited" },
+          { "id": "gemini-3-flash-live", "name": "Gemini 3 Flash Live", "rpm": "0 / Unlimited", "tpm": "0 / 65K", "rpd": "0 / Unlimited" },
+          { "id": "gemini-3.5-live-translate", "name": "Gemini 3.5 Live Translate", "rpm": "0 / Unlimited", "tpm": "0 / 20K", "rpd": "0 / Unlimited" },
+          { "id": "gemini-3.8-live", "name": "Gemini 3.8 Live", "rpm": "0 / Unlimited", "tpm": "0 / 65K", "rpd": "0 / Unlimited" }
+        ]
+      }
+    ]
+  },
+  "thirdPartyPresets": [
+    {
+      "name": "9router AI Gateway",
+      "baseUrl": "https://api.9router.com/v1",
+      "recommendedModels": [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "deepseek-chat",
+        "claude-3-5-sonnet",
+        "gemini-2.0-flash"
+      ]
+    },
+    {
+      "name": "OpenRouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "recommendedModels": [
+        "deepseek/deepseek-chat",
+        "meta-llama/llama-3.3-70b-instruct",
+        "google/gemini-2.0-flash-exp:free"
+      ]
+    },
+    {
+      "name": "OpenAI Official",
+      "baseUrl": "https://api.openai.com/v1",
+      "recommendedModels": [
+        "gpt-4o-mini",
+        "gpt-4o"
+      ]
+    }
+  ]
+}

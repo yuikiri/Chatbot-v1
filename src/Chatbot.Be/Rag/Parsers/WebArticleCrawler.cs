@@ -9,10 +9,23 @@ public record CrawledDocumentResult(
     string Title, 
     string FormattedText, 
     string SuggestedFileName, 
-    string SourceUrl
+    string SourceUrl,
+    string RawHtml
 );
 
-public static class WebArticleCrawler
+public record CrawlInspectionResult(
+    string Url,
+    string Title,
+    int TextLength,
+    int ParagraphCount,
+    int ImageCount,
+    string PreviewSnippet,
+    string Quality,
+    string? WarningMessage,
+    bool ShouldWarn
+);
+
+public static partial class WebArticleCrawler
 {
     private static readonly HashSet<string> TagsToRemove = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,6 +33,15 @@ public static class WebArticleCrawler
         "aside", "svg", "iframe", "button", "input", "form", "select", 
         "textarea", "meta", "link"
     };
+
+    [GeneratedRegex(@"[\r\n\t]+")]
+    private static partial Regex NewlinesAndTabsRegex();
+
+    [GeneratedRegex(@" {2,}")]
+    private static partial Regex MultipleSpacesRegex();
+
+    [GeneratedRegex(@"[^\w\d\-]+")]
+    private static partial Regex NonWordCharRegex();
 
     public static async Task<CrawledDocumentResult> CrawlArticleAsync(
         string url, 
@@ -112,8 +134,8 @@ public static class WebArticleCrawler
         if (cleanedText.Length < 100)
         {
             var rawText = HtmlEntity.DeEntitize(mainContentNode.InnerText);
-            cleanedText = Regex.Replace(rawText, @"[\r\n\t]+", "\n");
-            cleanedText = Regex.Replace(cleanedText, @" {2,}", " ");
+            cleanedText = NewlinesAndTabsRegex().Replace(rawText, "\n");
+            cleanedText = MultipleSpacesRegex().Replace(cleanedText, " ");
             cleanedText = cleanedText.Trim();
         }
 
@@ -123,7 +145,7 @@ public static class WebArticleCrawler
         }
 
         // Tạo tên tệp gợi ý an toàn
-        string safeTitle = Regex.Replace(title, @"[^\w\d\-]+", "_").Trim('_');
+        string safeTitle = NonWordCharRegex().Replace(title, "_").Trim('_');
         if (safeTitle.Length > 40) safeTitle = safeTitle[..40];
         string suggestedFileName = $"web_{safeTitle}_{DateTime.UtcNow:yyyyMMdd_HHmm}.txt";
 
@@ -136,6 +158,158 @@ NGƯỜI THU THẬP: Admin
 
 {cleanedText}";
 
-        return new CrawledDocumentResult(title, formattedContent, suggestedFileName, url);
+        return new CrawledDocumentResult(title, formattedContent, suggestedFileName, url, html);
+    }
+
+    public static async Task<CrawlInspectionResult> InspectArticleAsync(
+        string url, 
+        HttpClient httpClient, 
+        CancellationToken ct = default)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || 
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException("Đường dẫn URL không hợp lệ. Vui lòng nhập link bắt đầu bằng http:// hoặc https://");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+        request.Headers.AcceptLanguage.Add(new StringWithQualityHeaderValue("vi"));
+        request.Headers.AcceptLanguage.Add(new StringWithQualityHeaderValue("en", 0.8));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
+        }
+        catch (Exception ex)
+        {
+            var detail = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
+            return new CrawlInspectionResult(
+                Url: url,
+                Title: uri.Host,
+                TextLength: 0,
+                ParagraphCount: 0,
+                ImageCount: 0,
+                PreviewSnippet: string.Empty,
+                Quality: "error",
+                WarningMessage: $"Không thể kết nối tới trang web: {detail}",
+                ShouldWarn: true
+            );
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return new CrawlInspectionResult(
+                Url: url,
+                Title: uri.Host,
+                TextLength: 0,
+                ParagraphCount: 0,
+                ImageCount: 0,
+                PreviewSnippet: string.Empty,
+                Quality: "error",
+                WarningMessage: $"Trang web phản hồi mã lỗi {(int)response.StatusCode} ({response.ReasonPhrase}). Có thể trang yêu cầu đăng nhập hoặc chặn bot tự động.",
+                ShouldWarn: true
+            );
+        }
+
+        string html = await response.Content.ReadAsStringAsync(ct);
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return new CrawlInspectionResult(
+                Url: url,
+                Title: uri.Host,
+                TextLength: 0,
+                ParagraphCount: 0,
+                ImageCount: 0,
+                PreviewSnippet: string.Empty,
+                Quality: "error",
+                WarningMessage: "Trang web trả về nội dung rỗng.",
+                ShouldWarn: true
+            );
+        }
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Đếm số ảnh
+        int imageCount = doc.DocumentNode.SelectNodes("//img")?.Count ?? 0;
+
+        // Trích xuất tiêu đề
+        string title = string.Empty;
+        var titleNode = doc.DocumentNode.SelectSingleNode("//title") 
+                     ?? doc.DocumentNode.SelectSingleNode("//h1");
+        if (titleNode != null)
+        {
+            title = HtmlEntity.DeEntitize(titleNode.InnerText).Trim();
+        }
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = uri.Host;
+        }
+
+        // Loại bỏ rác
+        var nodesToRemove = doc.DocumentNode.Descendants()
+            .Where(n => TagsToRemove.Contains(n.Name))
+            .ToList();
+        foreach (var node in nodesToRemove)
+        {
+            node.Remove();
+        }
+
+        var mainContentNode = doc.DocumentNode.SelectSingleNode("//article") 
+                           ?? doc.DocumentNode.SelectSingleNode("//main")
+                           ?? doc.DocumentNode.SelectSingleNode("//div[contains(@class, 'article') or contains(@class, 'content') or contains(@id, 'content') or contains(@class, 'post')]")
+                           ?? doc.DocumentNode.SelectSingleNode("//body")
+                           ?? doc.DocumentNode;
+
+        var contentBlocks = mainContentNode.Descendants()
+            .Where(n => n.Name is "p" or "h1" or "h2" or "h3" or "h4" or "li" or "blockquote")
+            .Select(n => HtmlEntity.DeEntitize(n.InnerText).Trim())
+            .Where(t => !string.IsNullOrEmpty(t) && t.Length > 20)
+            .ToList();
+
+        string cleanedText = string.Join("\n\n", contentBlocks).Trim();
+        if (cleanedText.Length < 100)
+        {
+            var rawText = HtmlEntity.DeEntitize(mainContentNode.InnerText);
+            cleanedText = NewlinesAndTabsRegex().Replace(rawText, "\n");
+            cleanedText = MultipleSpacesRegex().Replace(cleanedText, " ");
+            cleanedText = cleanedText.Trim();
+        }
+
+        int textLen = cleanedText.Length;
+        int pCount = contentBlocks.Count;
+        string snippet = textLen > 250 ? cleanedText[..250] + "..." : cleanedText;
+
+        string quality = "good";
+        string? warning = null;
+        bool shouldWarn = false;
+
+        if (textLen < 200)
+        {
+            quality = "warning_short";
+            warning = $"Cảnh báo chất lượng: Nội dung văn bản quá ngắn (chỉ có {textLen} ký tự). Có thể trang web sử dụng JavaScript (SPA) để hiển thị, hoặc nội dung chính nằm trong ảnh/video. Cào trang này có thể không thu được dữ liệu y văn hữu ích.";
+            shouldWarn = true;
+        }
+        else if (imageCount > 8 && textLen < 450)
+        {
+            quality = "warning_images";
+            warning = $"Cảnh báo hình ảnh: Trang web chứa nhiều ảnh ({imageCount} ảnh) nhưng ít văn bản ({textLen} ký tự). AI chỉ xử lý văn bản chữ, không đọc được bảng biểu/sơ đồ trong hình.";
+            shouldWarn = true;
+        }
+
+        return new CrawlInspectionResult(
+            Url: url,
+            Title: title,
+            TextLength: textLen,
+            ParagraphCount: pCount,
+            ImageCount: imageCount,
+            PreviewSnippet: snippet,
+            Quality: quality,
+            WarningMessage: warning,
+            ShouldWarn: shouldWarn
+        );
     }
 }
