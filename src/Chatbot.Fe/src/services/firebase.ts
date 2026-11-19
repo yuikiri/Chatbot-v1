@@ -204,6 +204,7 @@ export async function saveChatMessage(userId: string, conversationId: string, ms
   } catch (e) {
     console.warn("Lỗi cập nhật token user:", e);
   }
+
   return docRef.id;
 }
 
@@ -261,24 +262,19 @@ export async function getConversationMessages(userId: string, conversationId: st
   return msgs;
 }
 
-export function subscribeConversationMessages(
-  userId: string,
-  conversationId: string,
-  callback: (msgs: any[]) => void
-) {
+export function subscribeConversationMessages(userId: string, conversationId: string, callback: (msgs: any[]) => void) {
   if (!db) {
     callback([]);
     return () => {};
   }
   const messagesRef = collection(db, "users", userId, "conversations", conversationId, "messages");
   const q = query(messagesRef, orderBy("timestamp", "asc"));
-  return onSnapshot(q, (snapshot) => {
+  return onSnapshot(q, (snap) => {
     const msgs: any[] = [];
-    snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+    snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
     callback(msgs);
   }, (err) => {
-    console.error("Lỗi lắng nghe tin nhắn realtime:", err);
-    callback([]);
+    console.error("Lỗi lắng nghe tin nhắn cuộc trò chuyện:", err);
   });
 }
 
@@ -537,30 +533,36 @@ export async function saveConversationEvaluation(
 // ==============================================================================
 export interface IncidentRecord {
   id: string;
+  category: 'system_detected' | 'user_reported';
   userId: string;
   userEmail?: string;
   conversationId: string;
-  messageId?: string; // Định danh tin nhắn cụ thể
+  messageId?: string;
   userQuery: string;
   botResponse?: string;
-  category: 'system_detected' | 'user_reported'; // Phân loại nguồn: Lỗi hệ thống phát hiện vs Lỗi người dùng báo cáo
-  errorType: 'model_timeout' | 'quota_exceeded' | 'refusal' | 'contraindicated_flag' | 'user_reported' | 'system_exception';
+  errorType: 'model_timeout' | 'quota_exceeded' | 'refusal' | 'contraindicated_flag' | 'user_reported';
   errorMessage?: string;
   status: 'pending' | 'in_review' | 'resolved';
   adminNotes?: string;
   correctedResponse?: string;
-  adminEvaluatedBy?: string;
+  adminEmail?: string;
   createdAt: any;
   resolvedAt?: any;
 }
 
 export async function reportIncident(
-  incident: Omit<IncidentRecord, "id" | "createdAt" | "status"> & { category?: 'system_detected' | 'user_reported' }
+  incident: Omit<IncidentRecord, "id" | "createdAt" | "status" | "category"> & { category?: 'system_detected' | 'user_reported' }
 ): Promise<string | null> {
   if (!db) return null;
   try {
     const colRef = collection(db, "incidents");
-    const category = incident.category || (incident.errorType === 'user_reported' ? 'user_reported' : 'system_detected');
+    // Tự động phân loại category nếu chưa truyền
+    const category = incident.category || (
+      incident.errorType === 'model_timeout' || incident.errorType === 'quota_exceeded'
+        ? 'system_detected'
+        : 'user_reported'
+    );
+
     const docRef = await addDoc(colRef, {
       ...incident,
       category,
@@ -585,22 +587,25 @@ export function subscribeIncidents(callback: (list: IncidentRecord[]) => void) {
     const list: IncidentRecord[] = [];
     snapshot.forEach(docSnap => {
       const d = docSnap.data();
-      const cat: 'system_detected' | 'user_reported' = d.category || (d.errorType === 'user_reported' ? 'user_reported' : 'system_detected');
+      const cat = d.category || (
+        d.errorType === 'model_timeout' || d.errorType === 'quota_exceeded'
+          ? 'system_detected'
+          : 'user_reported'
+      );
       list.push({
         id: docSnap.id,
+        category: cat,
         userId: d.userId || "",
         userEmail: d.userEmail,
         conversationId: d.conversationId || "",
         messageId: d.messageId,
         userQuery: d.userQuery || "",
         botResponse: d.botResponse,
-        category: cat,
         errorType: d.errorType || "user_reported",
         errorMessage: d.errorMessage,
         status: d.status || "pending",
         adminNotes: d.adminNotes,
         correctedResponse: d.correctedResponse,
-        adminEvaluatedBy: d.adminEvaluatedBy,
         createdAt: d.createdAt,
         resolvedAt: d.resolvedAt
       });
@@ -622,102 +627,96 @@ export async function updateIncident(incidentId: string, updates: Partial<Incide
   await updateDoc(docRef, dataToUpdate);
 }
 
-// Cập nhật sự cố và tự động đồng bộ phản hồi / đính chính tới tin nhắn của người dùng
 export async function updateIncidentAndNotifyMessage(
-  incident: IncidentRecord,
-  updates: {
-    status: 'pending' | 'in_review' | 'resolved';
-    adminNotes?: string;
-    correctedResponse?: string;
-    adminEmail?: string;
-  }
+  incidentOrId: IncidentRecord | string,
+  incidentOrUpdates: Partial<IncidentRecord> | IncidentRecord,
+  maybeUpdates?: Partial<IncidentRecord>
 ) {
   if (!db) return;
+  let incidentId: string;
+  let incident: IncidentRecord;
+  let updates: Partial<IncidentRecord>;
 
-  // 1. Cập nhật tài liệu trong collection incidents
-  const incidentRef = doc(db, "incidents", incident.id);
-  const dataToUpdate: any = {
-    status: updates.status,
-    adminNotes: updates.adminNotes ?? incident.adminNotes ?? "",
-    correctedResponse: updates.correctedResponse ?? incident.correctedResponse ?? "",
-    adminEvaluatedBy: updates.adminEmail || "Bác sĩ Quản trị"
-  };
+  if (typeof incidentOrId === "string") {
+    incidentId = incidentOrId;
+    incident = incidentOrUpdates as IncidentRecord;
+    updates = maybeUpdates || {};
+  } else {
+    incident = incidentOrId;
+    incidentId = incident.id;
+    updates = (incidentOrUpdates as Partial<IncidentRecord>) || {};
+  }
+
+  // 1. Cập nhật tài liệu incident
+  const docRef = doc(db, "incidents", incidentId);
+  const dataToUpdate: any = { ...updates };
   if (updates.status === "resolved") {
     dataToUpdate.resolvedAt = serverTimestamp();
   }
-  await updateDoc(incidentRef, dataToUpdate);
+  await updateDoc(docRef, dataToUpdate);
 
-  // 2. Đồng bộ phản hồi trực tiếp vào tin nhắn của user nếu có userId và conversationId
-  if (
-    incident.userId && 
-    incident.userId !== "anonymous" && 
-    incident.conversationId && 
-    incident.conversationId !== "untracked"
-  ) {
-    try {
-      let targetMsgId = incident.messageId;
+  // 2. Đồng bộ phản hồi chuyên môn tới tin nhắn của người dùng nếu có userId & conversationId
+  const userId = incident.userId;
+  const convId = incident.conversationId;
+  const msgId = incident.messageId;
 
-      // Nếu chưa có messageId, tìm tin nhắn của assistant trong conversation đó
-      if (!targetMsgId) {
-        const messagesRef = collection(db, "users", incident.userId, "conversations", incident.conversationId, "messages");
-        const snap = await getDocs(messagesRef);
-        snap.forEach(d => {
-          const data = d.data();
-          if (data.role === "assistant" && (!targetMsgId || data.content === incident.botResponse)) {
-            targetMsgId = d.id;
-          }
-        });
-      }
+  if (userId && userId !== "anonymous" && convId && convId !== "untracked") {
+    const adminReviewData = {
+      status: updates.status || incident.status || "resolved",
+      adminNotes: updates.adminNotes !== undefined ? updates.adminNotes : (incident.adminNotes || ""),
+      correctedResponse: updates.correctedResponse !== undefined ? updates.correctedResponse : (incident.correctedResponse || ""),
+      evaluatedAt: serverTimestamp(),
+      adminName: "Bác sĩ / Ban Chuyên môn LactaMed"
+    };
 
-      if (targetMsgId) {
-        const msgRef = doc(db, "users", incident.userId, "conversations", incident.conversationId, "messages", targetMsgId);
+    if (msgId && msgId !== "untracked") {
+      try {
+        const msgRef = doc(db, "users", userId, "conversations", convId, "messages", msgId);
         await updateDoc(msgRef, {
-          adminReview: {
-            status: updates.status,
-            notes: updates.adminNotes || "",
-            correctedResponse: updates.correctedResponse || "",
-            evaluatedAt: serverTimestamp(),
-            adminEmail: updates.adminEmail || "Bác sĩ Quản trị",
-            incidentId: incident.id
-          }
+          adminReview: adminReviewData
         });
+      } catch (err) {
+        console.warn("Không thể cập nhật trực tiếp theo messageId:", err);
       }
+    }
 
-      // Cập nhật thông tin thẩm định mới nhất vào conversation
-      const convRef = doc(db, "users", incident.userId, "conversations", incident.conversationId);
-      await updateDoc(convRef, {
-        adminNotes: updates.adminNotes || "",
-        evaluatedAt: serverTimestamp()
-      });
+    try {
+      const convRef = doc(db, "users", userId, "conversations", convId);
+      await setDoc(convRef, {
+        hasDoctorReview: true,
+        lastReviewedAt: serverTimestamp()
+      }, { merge: true });
     } catch (e) {
-      console.warn("Lỗi đồng bộ phản hồi tới tin nhắn người dùng:", e);
+      console.warn("Lỗi cập nhật conversation review flag:", e);
     }
   }
 }
 
-// Bác sĩ đánh giá hoặc đính chính trực tiếp tin nhắn từ Tab 1 (Người dùng)
-export async function updateMessageDoctorReview(
+export async function addMessageDoctorReview(
   userId: string,
   conversationId: string,
   messageId: string,
   review: {
     status: 'pending' | 'in_review' | 'resolved';
-    notes?: string;
+    adminNotes?: string;
     correctedResponse?: string;
-    adminEmail?: string;
+    adminName?: string;
   }
 ) {
   if (!db) return;
   const msgRef = doc(db, "users", userId, "conversations", conversationId, "messages", messageId);
   await updateDoc(msgRef, {
     adminReview: {
-      status: review.status,
-      notes: review.notes || "",
-      correctedResponse: review.correctedResponse || "",
-      evaluatedAt: serverTimestamp(),
-      adminEmail: review.adminEmail || "Bác sĩ Quản trị"
+      ...review,
+      evaluatedAt: serverTimestamp()
     }
   });
+
+  const convRef = doc(db, "users", userId, "conversations", conversationId);
+  await setDoc(convRef, {
+    hasDoctorReview: true,
+    lastReviewedAt: serverTimestamp()
+  }, { merge: true });
 }
 
 export async function deleteIncident(incidentId: string) {

@@ -31,11 +31,14 @@ import {
   saveConversationEvaluation,
   subscribeIncidents,
   updateIncidentAndNotifyMessage,
+  addMessageDoctorReview,
   formatConversationTime
 } from "../services/firebase";
 import { marked } from "marked";
 import { 
   Users, 
+  User,
+  Stethoscope,
   AlertTriangle, 
   Cpu, 
   Database, 
@@ -65,8 +68,6 @@ import {
   CheckCircle,
   Eye,
   Copy,
-  User,
-  Stethoscope,
   Download,
   ExternalLink,
   X
@@ -111,6 +112,12 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
   const [evalNotes, setEvalNotes] = useState<string>("");
   const [savingEval, setSavingEval] = useState(false);
   const [evalSavedSuccess, setEvalSavedSuccess] = useState(false);
+
+  // Doctor Inline Review Form State
+  const [reviewingMsgId, setReviewingMsgId] = useState<string | null>(null);
+  const [doctorCorrectedResponse, setDoctorCorrectedResponse] = useState<string>("");
+  const [doctorNotes, setDoctorNotes] = useState<string>("");
+  const [savingDoctorReview, setSavingDoctorReview] = useState(false);
 
   // -------------------------------------------------------------
   // TAB 2: INCIDENTS HUB STATE
@@ -361,7 +368,6 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         tags: evalTags,
         adminNotes: evalNotes.trim()
       });
-      // Update local state
       setSelectedConv(prev => prev ? { ...prev, rating: evalRating, tags: evalTags, adminNotes: evalNotes.trim() } : null);
       setUserConvs(prev => prev.map(c => c.id === selectedConv.id ? { ...c, rating: evalRating, tags: evalTags, adminNotes: evalNotes.trim() } : c));
       setEvalSavedSuccess(true);
@@ -370,6 +376,52 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
       console.error(err);
     } finally {
       setSavingEval(false);
+    }
+  };
+
+  const handleStartReview = (msg: any) => {
+    setReviewingMsgId(msg.id || null);
+    setDoctorCorrectedResponse(msg.adminReview?.correctedResponse || "");
+    setDoctorNotes(msg.adminReview?.doctorNotes || "");
+  };
+
+  const handleCancelReview = () => {
+    setReviewingMsgId(null);
+    setDoctorCorrectedResponse("");
+    setDoctorNotes("");
+  };
+
+  const handleSaveDoctorReview = async (msgId: string) => {
+    if (!selectedUser || !selectedConv) return;
+    setSavingDoctorReview(true);
+    try {
+      await addMessageDoctorReview(selectedUser.uid, selectedConv.id, msgId, {
+        status: "resolved",
+        doctorEmail: "Bác sĩ Quản trị",
+        correctedResponse: doctorCorrectedResponse.trim(),
+        doctorNotes: doctorNotes.trim()
+      });
+      setConvMessages(prev => prev.map(m => {
+        if (m.id === msgId) {
+          return {
+            ...m,
+            adminReview: {
+              status: "resolved",
+              doctorEmail: "Bác sĩ Quản trị",
+              correctedResponse: doctorCorrectedResponse.trim(),
+              doctorNotes: doctorNotes.trim(),
+              reviewedAt: Date.now()
+            }
+          };
+        }
+        return m;
+      }));
+      setFeedbackMsg({ text: "Đã lưu đính chính của bác sĩ cho tin nhắn này!", type: "success" });
+      handleCancelReview();
+    } catch (err: any) {
+      setFeedbackMsg({ text: err.message || "Lỗi lưu thẩm định bác sĩ", type: "error" });
+    } finally {
+      setSavingDoctorReview(false);
     }
   };
 
@@ -497,25 +549,25 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
     setFeedbackMsg(null);
     try {
       const res = await adminCrawlDocument(crawlUrl.trim(), adminKey);
-      setFeedbackMsg({ text: res.message || "Cào tài liệu thành công!", type: "success" });
+      setFeedbackMsg({ text: `Cào dữ liệu thành công! Đã tạo ${res.chunkCount} đoạn vector và đồng bộ lên Qdrant Cloud.`, type: "success" });
       setCrawlUrl("");
       setInspectionResult(null);
       await loadDocs();
     } catch (err: any) {
-      setFeedbackMsg({ text: err.message || "Cào tài liệu thất bại", type: "error" });
+      setFeedbackMsg({ text: err.message || "Cào tài liệu thất bại.", type: "error" });
     } finally {
       setCrawling(false);
     }
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile) return;
     setUploadingFile(true);
     setFeedbackMsg(null);
     try {
       await adminUploadDocument(selectedFile, adminKey);
-      setFeedbackMsg({ text: `Đã nạp tệp "${selectedFile.name}" thành công!`, type: "success" });
+      setFeedbackMsg({ text: `Đã nạp và tạo vector thành công cho tệp "${selectedFile.name}"!`, type: "success" });
       setSelectedFile(null);
       const input = document.getElementById("portal-upload-input") as HTMLInputElement;
       if (input) input.value = "";
@@ -614,8 +666,6 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
   // Pending incidents counter
   const pendingIncidentsCount = incidentsList.filter(i => i.status === "pending").length;
-  const systemIncidentsCount = incidentsList.filter(i => i.category === "system_detected" || (i.errorType && i.errorType !== "user_reported")).length;
-  const userIncidentsCount = incidentsList.filter(i => i.category === "user_reported" || i.errorType === "user_reported").length;
 
   // Filtered Users
   const filteredUsers = usersList.filter(u => {
@@ -628,7 +678,6 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
   // Filtered Incidents
   const filteredIncidents = incidentsList.filter(i => {
-    // 1. Phân loại theo Category Header Tab
     if (incidentCategoryTab === "system_detected") {
       const isSystem = i.category === "system_detected" || (i.errorType && i.errorType !== "user_reported");
       if (!isSystem) return false;
@@ -637,51 +686,48 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
       if (!isUser) return false;
     }
 
-    // 2. Lọc theo trạng thái xử lý
     if (incidentStatusFilter !== "all" && i.status !== incidentStatusFilter) return false;
-
-    // 3. Lọc theo loại lỗi
     if (incidentTypeFilter !== "all" && i.errorType !== incidentTypeFilter) return false;
 
     return true;
   });
 
   // =============================================================
-  // RENDER: LOCKED VIEW
+  // RENDER: LOCKED VIEW (CHẾ ĐỘ KHÓA PIN NOTION)
   // =============================================================
   if (isOpen !== undefined && !isOpen) return null;
 
   if (!isUnlocked) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-white">
+      <div className="fixed inset-0 z-50 bg-[#F6F5F4] flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border border-black/8 rounded-xl p-8 shadow-card-soft text-black">
           <div className="flex items-center justify-between mb-6">
             <button
               onClick={onBack}
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition"
+              className="text-xs text-black/60 hover:text-black flex items-center gap-1.5 transition cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Quay lại giao diện Chat</span>
             </button>
-            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+            <div className="p-2 bg-[#FEF3C7] text-[#D97706] rounded-lg border border-[#FFB110]/30">
               <Lock className="w-5 h-5" />
             </div>
           </div>
 
           <div className="mb-6">
-            <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+            <h2 className="text-lg font-semibold flex items-center gap-2 text-black">
               <span>Cổng Quản Trị Hệ Thống</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Vui lòng nhập mật khẩu Quản trị viên (ADMIN_SECRET_KEY) để truy cập toàn quyền giám sát người dùng, xử lý sự cố, quản lý AI model và tri thức.
+            <p className="text-xs text-black/60 mt-1 leading-relaxed">
+              Vui lòng nhập mật khẩu Quản trị viên (ADMIN_SECRET_KEY) để truy cập toàn quyền giám sát người dùng, xử lý sự cố, quản lý AI model và tri thức y khoa.
             </p>
           </div>
 
           {feedbackMsg && (
-            <div className={`p-3 rounded-xl mb-4 text-xs flex items-center gap-2 ${
+            <div className={`p-3 rounded-lg mb-4 text-xs flex items-center gap-2 ${
               feedbackMsg.type === "success" 
-                ? "bg-emerald-950/60 border border-emerald-800 text-emerald-300"
-                : "bg-red-950/60 border border-red-800 text-red-300"
+                ? "bg-[#D0F4D8] border border-[#1AAE39]/30 text-[#1AAE39]"
+                : "bg-[#FFE4E6] border border-[#F64932]/30 text-[#F64932]"
             }`}>
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{feedbackMsg.text}</span>
@@ -690,17 +736,17 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
           <form onSubmit={(e) => { e.preventDefault(); verifyAndUnlock(adminKey); }} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              <label className="block text-xs font-medium text-black/70 mb-1.5">
                 Mã Khóa Quản Trị (Secret Key):
               </label>
               <div className="relative">
-                <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <KeyRound className="w-4 h-4 text-black/40 absolute left-3 top-2.5" />
                 <input
                   type="password"
                   value={adminKey}
                   onChange={(e) => setAdminKey(e.target.value)}
                   placeholder="Nhập ADMIN_SECRET_KEY từ file .env..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  className="w-full bg-white border border-black/16 rounded-lg pl-9 pr-3 py-2 text-xs text-black placeholder-black/35 focus:outline-none focus:ring-2 focus:ring-[#0075DE] transition"
                 />
               </div>
             </div>
@@ -708,7 +754,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
             <button
               type="submit"
               disabled={verifying}
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-lg shadow-teal-900/30"
+              className="w-full bg-[#0075DE] hover:bg-[#0062BD] text-white font-medium py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-2xs"
             >
               {verifying ? (
                 <>
@@ -729,19 +775,19 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
   }
 
   // =============================================================
-  // RENDER: FULL-PAGE ADMIN PORTAL
+  // RENDER: FULL-PAGE ADMIN PORTAL (NOTION WORKSPACE)
   // =============================================================
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 text-slate-100 flex flex-col lg:flex-row overflow-hidden font-sans">
+    <div className="fixed inset-0 z-50 bg-[#F6F5F4] text-black flex flex-col lg:flex-row overflow-hidden font-sans">
       {/* MOBILE TOP NAVIGATION BAR */}
-      <div className="lg:hidden flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 shrink-0">
+      <div className="lg:hidden flex items-center justify-between px-4 py-2.5 bg-white border-b border-black/8 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
+          <div className="w-7 h-7 rounded-lg bg-[#E6F3FE] text-[#0075DE] flex items-center justify-center border border-[#0075DE]/20">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-xs font-bold text-white tracking-wide">QUẢN TRỊ LACTAMED</h1>
-            <p className="text-[10px] text-teal-400 font-medium">Trung tâm Vận hành</p>
+            <h1 className="text-xs font-semibold text-black tracking-wide">QUẢN TRỊ LACTAMED</h1>
+            <p className="text-[10px] text-black/50 font-medium">Trung tâm Vận hành</p>
           </div>
         </div>
 
@@ -751,14 +797,14 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
               setIsUnlocked(false);
               sessionStorage.removeItem("chatbot_admin_key");
             }}
-            className="p-1.5 text-slate-400 hover:text-red-400 transition"
+            className="p-1.5 text-black/50 hover:text-[#F64932] transition cursor-pointer"
             title="Khóa lại"
           >
             <Lock className="w-4 h-4" />
           </button>
           <button
             onClick={onBack}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1 transition"
+            className="px-2.5 py-1 bg-[#F6F5F4] hover:bg-black/5 text-black text-xs font-medium rounded-lg border border-black/10 flex items-center gap-1 transition cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Về Chat</span>
@@ -767,68 +813,68 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
       </div>
 
       {/* MOBILE SCROLLABLE TAB BAR */}
-      <div className="lg:hidden flex items-center gap-1.5 px-3 py-2 bg-slate-950 border-b border-slate-800 overflow-x-auto text-xs shrink-0">
+      <div className="lg:hidden flex items-center gap-1.5 px-3 py-2 bg-[#F6F5F4] border-b border-black/8 overflow-x-auto text-xs shrink-0">
         <button
           onClick={() => { setActiveTab("users"); setMobileUserView("users"); }}
-          className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === "users" ? "bg-teal-600 text-white shadow-sm" : "bg-slate-900 text-slate-400 hover:text-white"
+          className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === "users" ? "bg-white text-black shadow-2xs border border-black/8" : "text-black/60 hover:text-black hover:bg-black/5"
           }`}
         >
-          <Users className="w-3.5 h-3.5" />
+          <Users className="w-3.5 h-3.5 text-[#0075DE]" />
           <span>Người dùng ({usersList.length})</span>
         </button>
         <button
           onClick={() => { setActiveTab("incidents"); setMobileIncidentView("list"); }}
-          className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === "incidents" ? "bg-teal-600 text-white shadow-sm" : "bg-slate-900 text-slate-400 hover:text-white"
+          className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === "incidents" ? "bg-white text-black shadow-2xs border border-black/8" : "text-black/60 hover:text-black hover:bg-black/5"
           }`}
         >
-          <AlertTriangle className="w-3.5 h-3.5" />
+          <AlertTriangle className="w-3.5 h-3.5 text-[#FFB110]" />
           <span>Sự cố</span>
           {pendingIncidentsCount > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-red-500 text-white font-bold text-[10px]">
+            <span className="px-1.5 py-0.2 rounded-full bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30 font-bold text-[10px]">
               {pendingIncidentsCount}
             </span>
           )}
         </button>
         <button
           onClick={() => setActiveTab("models")}
-          className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === "models" ? "bg-teal-600 text-white shadow-sm" : "bg-slate-900 text-slate-400 hover:text-white"
+          className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === "models" ? "bg-white text-black shadow-2xs border border-black/8" : "text-black/60 hover:text-black hover:bg-black/5"
           }`}
         >
-          <Cpu className="w-3.5 h-3.5" />
+          <Cpu className="w-3.5 h-3.5 text-[#1313BA]" />
           <span>Model & Quota</span>
         </button>
         <button
           onClick={() => setActiveTab("knowledge")}
-          className={`px-3 py-1.5 rounded-xl font-semibold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
-            activeTab === "knowledge" ? "bg-teal-600 text-white shadow-sm" : "bg-slate-900 text-slate-400 hover:text-white"
+          className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === "knowledge" ? "bg-white text-black shadow-2xs border border-black/8" : "text-black/60 hover:text-black hover:bg-black/5"
           }`}
         >
-          <Database className="w-3.5 h-3.5" />
+          <Database className="w-3.5 h-3.5 text-[#1AAE39]" />
           <span>Tri thức ({documents.length})</span>
         </button>
       </div>
 
-      {/* DESKTOP SIDEBAR QUẢN TRỊ */}
-      <aside className="hidden lg:flex w-64 sm:w-72 bg-slate-900 border-r border-slate-800 flex-col justify-between shrink-0">
+      {/* DESKTOP SIDEBAR QUẢN TRỊ NOTION WARM STONE */}
+      <aside className="hidden lg:flex w-64 sm:w-72 bg-[#F6F5F4] border-r border-black/8 flex-col justify-between shrink-0">
         <div>
           {/* Header Sidebar */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="p-4 border-b border-black/8 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
+              <div className="w-8 h-8 rounded-lg bg-[#E6F3FE] text-[#0075DE] flex items-center justify-center border border-[#0075DE]/20 shadow-2xs">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <h1 className="text-xs font-bold text-white tracking-wide">ADMIN PORTAL</h1>
-                <p className="text-[10px] text-teal-400 font-medium">Trung Tâm Vận Hành Y Khoa</p>
+                <h1 className="text-xs font-bold text-black tracking-wide">ADMIN PORTAL</h1>
+                <p className="text-[10px] text-black/50 font-medium">Trung Tâm Vận Hành Y Khoa</p>
               </div>
             </div>
 
             <button
               onClick={onBack}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              className="p-1.5 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition cursor-pointer"
               title="Quay lại giao diện Chat người dùng"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -836,17 +882,17 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
           </div>
 
           {/* User / Status Badge */}
-          <div className="p-3 mx-3 my-3 bg-slate-800/60 rounded-xl border border-slate-700/60 flex items-center justify-between">
+          <div className="p-3 mx-3 my-3 bg-white rounded-lg border border-black/8 flex items-center justify-between shadow-2xs">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-[11px] font-semibold text-slate-300">Đã mở khóa phiên</span>
+              <span className="w-2 h-2 rounded-full bg-[#1AAE39] animate-pulse"></span>
+              <span className="text-[11px] font-medium text-black/70">Đã mở khóa phiên</span>
             </div>
             <button
               onClick={() => {
                 setIsUnlocked(false);
                 sessionStorage.removeItem("chatbot_admin_key");
               }}
-              className="text-[10px] text-slate-400 hover:text-red-400 flex items-center gap-1 transition"
+              className="text-[10px] text-black/40 hover:text-[#F64932] flex items-center gap-1 transition cursor-pointer"
             >
               <Lock className="w-3 h-3" />
               <span>Khóa lại</span>
@@ -854,38 +900,38 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="px-3 space-y-1.5">
+          <nav className="px-3 space-y-1">
             <button
               onClick={() => setActiveTab("users")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition cursor-pointer ${
                 activeTab === "users"
-                  ? "bg-teal-600 text-white shadow-md shadow-teal-900/40"
-                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"
+                  ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Users className="w-4 h-4" />
+                <Users className="w-4 h-4 text-[#0075DE]" />
                 <span>Người dùng & Hội thoại</span>
               </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-800 text-slate-300">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/6 text-black/70 font-mono">
                 {usersList.length}
               </span>
             </button>
 
             <button
               onClick={() => setActiveTab("incidents")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition cursor-pointer ${
                 activeTab === "incidents"
-                  ? "bg-teal-600 text-white shadow-md shadow-teal-900/40"
-                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"
+                  ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <AlertTriangle className="w-4 h-4" />
+                <AlertTriangle className="w-4 h-4 text-[#FFB110]" />
                 <span>Nhật ký Sự cố & Sửa lỗi</span>
               </div>
               {pendingIncidentsCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-red-500 text-white font-bold animate-pulse">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30 font-bold animate-pulse">
                   {pendingIncidentsCount}
                 </span>
               )}
@@ -893,34 +939,34 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
             <button
               onClick={() => setActiveTab("models")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition cursor-pointer ${
                 activeTab === "models"
-                  ? "bg-teal-600 text-white shadow-md shadow-teal-900/40"
-                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"
+                  ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Cpu className="w-4 h-4" />
+                <Cpu className="w-4 h-4 text-[#1313BA]" />
                 <span>Quản lý Model & Quota</span>
               </div>
-              <span className="text-[10px] text-teal-300 font-mono">
+              <span className="text-[10px] text-[#0075DE] font-mono">
                 {modelConfig?.provider === "gemini" ? "Gemini" : "Custom"}
               </span>
             </button>
 
             <button
               onClick={() => setActiveTab("knowledge")}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition cursor-pointer ${
                 activeTab === "knowledge"
-                  ? "bg-teal-600 text-white shadow-md shadow-teal-900/40"
-                  : "text-slate-400 hover:bg-slate-800/80 hover:text-slate-200"
+                  ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <Database className="w-4 h-4" />
+                <Database className="w-4 h-4 text-[#1AAE39]" />
                 <span>Tri thức & Cào dữ liệu</span>
               </div>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-800 text-slate-300">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/6 text-black/70 font-mono">
                 {documents.length} docs
               </span>
             </button>
@@ -928,21 +974,21 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         </div>
 
         {/* Footer Overview Stats */}
-        <div className="p-4 border-t border-slate-800 text-[11px] text-slate-400 space-y-2 bg-slate-900/60">
+        <div className="p-4 border-t border-black/8 text-[11px] text-black/60 space-y-2 bg-[#F6F5F4]">
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">Vector Store:</span>
-            <span className="font-semibold text-slate-300 flex items-center gap-1">
-              <Zap className="w-3 h-3 text-amber-400" />
+            <span className="text-black/50">Vector Store:</span>
+            <span className="font-semibold text-black/80 flex items-center gap-1 font-mono">
+              <Zap className="w-3 h-3 text-[#FFB110]" />
               {modelConfig?.vectorStore === "qdrant" ? "Qdrant Cloud" : "SQLite RAM"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-slate-500">Tổng chunks y văn:</span>
-            <span className="font-semibold text-teal-400">{modelConfig?.totalChunks ?? 0}</span>
+            <span className="text-black/50">Tổng chunks y văn:</span>
+            <span className="font-semibold text-[#0075DE] font-mono">{modelConfig?.totalChunks ?? 0}</span>
           </div>
           <button
             onClick={onBack}
-            className="w-full mt-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+            className="w-full mt-2 py-2 bg-white hover:bg-black/5 text-black text-xs font-medium rounded-lg border border-black/10 flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Quay lại Chatbot</span>
@@ -951,23 +997,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
       </aside>
 
       {/* NỘI DUNG CHÍNH (MAIN WORKSPACE) */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+      <main className="flex-1 flex flex-col overflow-hidden bg-white">
         {/* Banner thông báo trạng thái */}
         {feedbackMsg && (
           <div className={`px-6 py-2.5 text-xs flex items-center justify-between border-b ${
             feedbackMsg.type === "success"
-              ? "bg-emerald-950/80 text-emerald-300 border-emerald-800"
-              : "bg-red-950/80 text-red-300 border-red-800"
+              ? "bg-[#D0F4D8] text-[#1AAE39] border-[#1AAE39]/30"
+              : "bg-[#FFE4E6] text-[#F64932] border-[#F64932]/30"
           }`}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 font-medium">
               {feedbackMsg.type === "success" ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <CheckCircle2 className="w-4 h-4 text-[#1AAE39]" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-red-400" />
+                <AlertCircle className="w-4 h-4 text-[#F64932]" />
               )}
               <span>{feedbackMsg.text}</span>
             </div>
-            <button onClick={() => setFeedbackMsg(null)} className="text-slate-400 hover:text-white">
+            <button onClick={() => setFeedbackMsg(null)} className="text-black/40 hover:text-black cursor-pointer">
               ✕
             </button>
           </div>
@@ -977,63 +1023,63 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* TAB 1: USERS & CONVERSATIONS INSPECTOR                        */}
         {/* ============================================================= */}
         {activeTab === "users" && (
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden bg-white">
             {/* 4 Thẻ KPI Thống Kê Người Dùng & Chi Phí */}
-            <div className="p-3 sm:p-4 bg-slate-900/90 border-b border-slate-800 shrink-0">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
-                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl flex items-center justify-between shadow-2xs">
+            <div className="p-3 sm:p-4 bg-[#F6F5F4] border-b border-black/8 shrink-0">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                <div className="p-3 bg-white border border-black/8 rounded-xl flex items-center justify-between shadow-2xs">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tổng Người Dùng</span>
-                    <span className="text-base sm:text-lg font-bold text-white font-mono mt-0.5 block">{usersList.length} <span className="text-xs font-normal text-slate-400">tài khoản</span></span>
+                    <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider block">Tổng Người Dùng</span>
+                    <span className="text-base sm:text-lg font-bold text-black font-mono mt-0.5 block">{usersList.length} <span className="text-xs font-normal text-black/50">tài khoản</span></span>
                   </div>
-                  <div className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-400 flex items-center justify-center border border-teal-500/20 shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-[#E6F3FE] text-[#0075DE] flex items-center justify-center border border-[#0075DE]/20 shrink-0">
                     <Users className="w-4 h-4" />
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl flex items-center justify-between shadow-2xs">
+                <div className="p-3 bg-white border border-black/8 rounded-xl flex items-center justify-between shadow-2xs">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phương Thức Xác Thực</span>
-                    <div className="flex items-center gap-2 mt-1 text-xs font-semibold">
-                      <span className="text-red-400 font-mono flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                    <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider block">Phương Thức Xác Thực</span>
+                    <div className="flex items-center gap-2 mt-1 text-xs font-medium">
+                      <span className="text-[#F64932] font-mono flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#F64932]"></span>
                         {usersList.filter(u => u.providerId === "google.com").length} Google
                       </span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-blue-400 font-mono flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                      <span className="text-black/30">•</span>
+                      <span className="text-[#0075DE] font-mono flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0075DE]"></span>
                         {usersList.filter(u => u.providerId !== "google.com").length} Email
                       </span>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center border border-blue-500/20 shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-[#E0E7FF] text-[#1313BA] flex items-center justify-center border border-[#1313BA]/20 shrink-0">
                     <KeyRound className="w-4 h-4" />
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl flex items-center justify-between shadow-2xs">
+                <div className="p-3 bg-white border border-black/8 rounded-xl flex items-center justify-between shadow-2xs">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cuộc Trò Chuyện Y Khoa</span>
-                    <span className="text-base sm:text-lg font-bold text-teal-300 font-mono mt-0.5 block">
-                      {usersList.reduce((acc, u) => acc + (u.conversationCount || 0), 0)} <span className="text-xs font-normal text-slate-400">phiên</span>
+                    <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider block">Cuộc Trò Chuyện Y Khoa</span>
+                    <span className="text-base sm:text-lg font-bold text-black font-mono mt-0.5 block">
+                      {usersList.reduce((acc, u) => acc + (u.conversationCount || 0), 0)} <span className="text-xs font-normal text-black/50">phiên</span>
                     </span>
                   </div>
-                  <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20 shrink-0">
+                  <div className="w-8 h-8 rounded-lg bg-[#EADBFA] text-[#6B21A8] flex items-center justify-center border border-[#6B21A8]/20 shrink-0">
                     <MessageSquare className="w-4 h-4" />
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl flex items-center justify-between shadow-2xs">
+                <div className="p-3 bg-white border border-black/8 rounded-xl flex items-center justify-between shadow-2xs">
                   <div className="min-w-0 pr-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Chi Phí Ước Tính</span>
-                    <span className="text-xs sm:text-sm font-bold text-amber-400 font-mono mt-0.5 block truncate" title={`Tổng tokens: ${usersList.reduce((acc, u) => acc + (u.totalTokensEstimated || 0), 0).toLocaleString()}`}>
-                      ${usersList.reduce((acc, u) => acc + (u.totalCostUsd || 0), 0).toFixed(4)} <span className="text-[10px] font-normal text-slate-400">(~{usersList.reduce((acc, u) => acc + (u.totalCostVnd || 0), 0).toLocaleString()}đ)</span>
+                    <span className="text-[10px] font-semibold text-black/50 uppercase tracking-wider block">Chi Phí Ước Tính</span>
+                    <span className="text-xs sm:text-sm font-bold text-[#D97706] font-mono mt-0.5 block truncate" title={`Tổng tokens: ${usersList.reduce((acc, u) => acc + (u.totalTokensEstimated || 0), 0).toLocaleString()}`}>
+                      ${usersList.reduce((acc, u) => acc + (u.totalCostUsd || 0), 0).toFixed(4)} <span className="text-[10px] font-normal text-black/50">(~{usersList.reduce((acc, u) => acc + (u.totalCostVnd || 0), 0).toLocaleString()}đ)</span>
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowRulesModal(true)}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-teal-400 rounded-xl text-xs border border-slate-700 transition cursor-pointer shrink-0"
+                    className="p-2 bg-[#F6F5F4] hover:bg-black/5 text-[#0075DE] rounded-lg text-xs border border-black/10 transition cursor-pointer shrink-0"
                     title="Cấu hình quyền đọc Firestore nếu danh sách User rỗng"
                   >
                     <ShieldCheck className="w-4 h-4" />
@@ -1043,598 +1089,665 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
             </div>
 
             <div className="flex-1 flex overflow-hidden">
-            {/* Cột trái: Danh sách Người dùng */}
-            <div className={`w-full lg:w-80 border-r border-slate-800 flex-col bg-slate-900/50 shrink-0 ${
-              mobileUserView === "users" ? "flex" : "hidden lg:flex"
-            }`}>
-              <div className="p-3 border-b border-slate-800">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-teal-400" />
-                    <span>Người dùng ({filteredUsers.length} trong DB)</span>
-                  </h2>
-                  <button
-                    onClick={loadUsers}
-                    className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer"
-                    title="Làm mới danh sách"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${usersLoading ? "animate-spin" : ""}`} />
-                  </button>
-                </div>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
-                  <input
-                    type="text"
-                    value={userSearchQuery}
-                    onChange={(e) => setUserSearchQuery(e.target.value)}
-                    placeholder="Tìm theo email, tên, ID..."
-                    className="w-full bg-slate-800/80 border border-slate-700 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
-
-              {/* Thông báo nếu có lỗi Firestore Security Rules */}
-              {userLoadError && (
-                <div className="m-3 p-3 rounded-xl bg-amber-950/60 border border-amber-800 text-[11px] text-amber-300 leading-relaxed space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-400">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Lưu ý quyền đọc Firestore</span>
-                  </div>
-                  <p>{userLoadError}</p>
-                </div>
-              )}
-
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-                {usersLoading && usersList.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
-                    <span>Đang tải danh sách người dùng...</span>
-                  </div>
-                ) : filteredUsers.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-500">
-                    Không tìm thấy người dùng nào phù hợp.
-                  </div>
-                ) : (
-                  filteredUsers.map((u) => {
-                    const isSelected = selectedUser?.uid === u.uid;
-                    const isGoogle = u.providerId === "google.com";
-                    return (
-                      <button
-                        key={u.uid}
-                        onClick={() => handleSelectUser(u)}
-                        className={`w-full p-3 text-left transition flex items-start gap-2.5 cursor-pointer ${
-                          isSelected
-                            ? "bg-teal-950/50 border-l-2 border-teal-500"
-                            : "hover:bg-slate-800/50 text-slate-300"
-                        }`}
-                      >
-                        <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-teal-400 shrink-0">
-                          {u.displayName ? u.displayName.charAt(0).toUpperCase() : "U"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-semibold text-white truncate">
-                              {u.displayName || "Người dùng"}
-                            </span>
-                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase shrink-0 ${
-                              isGoogle
-                                ? "bg-red-950/70 text-red-300 border border-red-800/70"
-                                : "bg-blue-950/70 text-blue-300 border border-blue-800/70"
-                            }`}>
-                              {isGoogle ? "Google" : "Email/Pass"}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                            {u.email || u.uid}
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1 font-mono">
-                            <span>{u.conversationCount ?? 0} chats</span>
-                            <span>{((u.totalTokensEstimated ?? 0) / 1000).toFixed(1)}k tokens</span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Cột giữa: Danh sách Cuộc hội thoại & Tìm kiếm tin nhắn */}
-            <div className={`w-full lg:w-80 border-r border-slate-800 flex-col bg-slate-900/30 shrink-0 ${
-              mobileUserView === "convs" ? "flex" : "hidden lg:flex"
-            }`}>
-              {/* Nút quay lại trên Mobile */}
-              <div className="lg:hidden p-2.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMobileUserView("users")}
-                  className="text-xs text-teal-400 hover:text-teal-300 font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Danh Sách Người Dùng</span>
-                </button>
-                <span className="text-[11px] text-slate-400 font-medium truncate max-w-[150px]">
-                  {selectedUser?.displayName || selectedUser?.email}
-                </span>
-              </div>
-
-              <div className="p-3 border-b border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
-                    <span>Hội thoại ({userConvs.length})</span>
-                  </h2>
-                  {selectedUser && (
+              {/* Cột trái: Danh sách Người dùng */}
+              <div className={`w-full lg:w-80 border-r border-black/8 flex-col bg-white shrink-0 ${
+                mobileUserView === "users" ? "flex" : "hidden lg:flex"
+              }`}>
+                <div className="p-3 border-b border-black/8 bg-white">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-xs font-semibold text-black uppercase tracking-wider flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-[#0075DE]" />
+                      <span>Người dùng ({filteredUsers.length})</span>
+                    </h2>
                     <button
-                      onClick={() => handleSelectUser(selectedUser)}
-                      className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer"
-                      title="Nạp lại"
+                      onClick={loadUsers}
+                      className="p-1 text-black/50 hover:text-black rounded hover:bg-black/5 transition cursor-pointer"
+                      title="Làm mới danh sách"
                     >
-                      <RefreshCw className={`w-3 h-3 ${convsLoading ? "animate-spin" : ""}`} />
+                      <RefreshCw className={`w-3 h-3 ${usersLoading ? "animate-spin" : ""}`} />
                     </button>
-                  )}
-                </div>
-
-                {/* Sub-tabs: Xem danh sách Chat vs Tìm kiếm tin nhắn */}
-                <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => setViewModeConv("conversations")}
-                    className={`flex-1 py-1 rounded font-semibold transition cursor-pointer ${
-                      viewModeConv === "conversations" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Danh sách chat
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewModeConv("search_results")}
-                    className={`flex-1 py-1 rounded font-semibold transition cursor-pointer ${
-                      viewModeConv === "search_results" ? "bg-teal-600 text-white" : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Tìm trong tin nhắn
-                  </button>
-                </div>
-
-                {viewModeConv === "conversations" ? (
+                  </div>
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                    <Search className="w-3.5 h-3.5 text-black/40 absolute left-2.5 top-2.5" />
                     <input
                       type="text"
-                      value={convSearchQuery}
-                      onChange={(e) => setConvSearchQuery(e.target.value)}
-                      placeholder="Lọc tiêu đề cuộc trò chuyện..."
-                      className="w-full bg-slate-800/80 border border-slate-700 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      placeholder="Tìm theo email, tên, ID..."
+                      className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                     />
                   </div>
-                ) : (
-                  <form onSubmit={handleSearchMessages} className="flex gap-1.5">
-                    <input
-                      type="text"
-                      value={msgSearchQuery}
-                      onChange={(e) => setMsgSearchQuery(e.target.value)}
-                      placeholder="Tìm từ khóa trong tin nhắn..."
-                      className="flex-1 bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isSearchingMessages || !msgSearchQuery.trim()}
-                      className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-semibold disabled:opacity-50 transition cursor-pointer"
-                    >
-                      {isSearchingMessages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tìm"}
-                    </button>
-                  </form>
-                )}
-              </div>
+                </div>
 
-              {/* Danh sách Hội thoại hoặc Kết quả tìm kiếm tin nhắn */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-                {viewModeConv === "search_results" ? (
-                  isSearchingMessages ? (
-                    <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                      <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
-                      <span>Đang tìm kiếm sâu trong tin nhắn...</span>
+                {/* Thông báo nếu có lỗi Firestore Security Rules */}
+                {userLoadError && (
+                  <div className="m-3 p-3 rounded-lg bg-[#FEF3C7] border border-[#FFB110]/30 text-[11px] text-[#D97706] leading-relaxed space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold text-[#D97706]">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Lưu ý quyền đọc Firestore</span>
                     </div>
-                  ) : foundMessages.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-500">
-                      {msgSearchQuery.trim() ? "Không tìm thấy tin nhắn nào chứa từ khóa này." : "Nhập từ khóa và bấm Tìm để quét tin nhắn."}
+                    <p>{userLoadError}</p>
+                  </div>
+                )}
+
+                <div className="flex-1 overflow-y-auto divide-y divide-black/5">
+                  {usersLoading && usersList.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-black/40 flex flex-col items-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#0075DE]" />
+                      <span>Đang tải danh sách người dùng...</span>
+                    </div>
+                  ) : filteredUsers.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-black/40">
+                      Không tìm thấy người dùng nào phù hợp.
                     </div>
                   ) : (
-                    <div className="p-2 space-y-1.5">
-                      <div className="text-[10px] text-teal-400 font-semibold px-2">
-                        Tìm thấy {foundMessages.length} tin nhắn khớp:
-                      </div>
-                      {foundMessages.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onClick={async () => {
-                            if (!selectedUser) return;
-                            const targetConv = userConvs.find(c => c.id === item.conversationId);
-                            if (targetConv) {
-                              await handleSelectConv(selectedUser.uid, targetConv);
-                            }
-                          }}
-                          className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500/60 cursor-pointer transition text-left space-y-1"
-                        >
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="font-bold text-teal-300 truncate max-w-[160px]">{item.conversationTitle}</span>
-                            <span className="text-slate-500 font-mono text-[9px]">{item.message.role === "user" ? "User" : "Bot"}</span>
-                          </div>
-                          <p className="text-xs text-slate-300 line-clamp-2">
-                            {item.message.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                ) : convsLoading ? (
-                  <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
-                    <span>Đang nạp cuộc trò chuyện...</span>
-                  </div>
-                ) : userConvs.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-500">
-                    Người dùng này chưa có cuộc trò chuyện nào được lưu.
-                  </div>
-                ) : (
-                  userConvs
-                    .filter(c => !convSearchQuery.trim() || (c.title || "").toLowerCase().includes(convSearchQuery.trim().toLowerCase()))
-                    .map((c) => {
-                      const isSelected = selectedConv?.id === c.id;
+                    filteredUsers.map((u) => {
+                      const isSelected = selectedUser?.uid === u.uid;
+                      const isGoogle = u.providerId === "google.com";
                       return (
                         <button
-                          key={c.id}
-                          onClick={() => selectedUser && handleSelectConv(selectedUser.uid, c)}
-                          className={`w-full p-3 text-left transition cursor-pointer ${
+                          key={u.uid}
+                          onClick={() => handleSelectUser(u)}
+                          className={`w-full p-3 text-left transition flex items-start gap-2.5 cursor-pointer ${
                             isSelected
-                              ? "bg-teal-950/60 border-l-2 border-teal-500"
-                              : "hover:bg-slate-800/40 text-slate-300"
+                              ? "bg-[#E6F3FE] border-l-2 border-[#0075DE]"
+                              : "hover:bg-[#F6F5F4]/60 text-black/80"
                           }`}
                         >
-                          <div className="text-xs font-semibold text-white truncate">
-                            {c.title || "Cuộc trò chuyện"}
+                          <div className="w-8 h-8 rounded-full bg-[#F6F5F4] border border-black/10 flex items-center justify-center font-bold text-xs text-[#0075DE] shrink-0">
+                            {u.displayName ? u.displayName.charAt(0).toUpperCase() : (u.email ? u.email.charAt(0).toUpperCase() : "U")}
                           </div>
-                          <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
-                            <span>{formatConversationTime(c.updatedAt || c.createdAt)}</span>
-                            {c.rating && (
-                              <span className="flex items-center gap-0.5 text-amber-400 font-bold">
-                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                {c.rating}★
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-black truncate max-w-[130px]">
+                                {u.displayName || "Người dùng"}
                               </span>
-                            )}
-                          </div>
-                          {c.tags && c.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {c.tags.slice(0, 2).map((t, i) => (
-                                <span key={i} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                                  {t}
-                                </span>
-                              ))}
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
+                                isGoogle ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/20" : "bg-[#E6F3FE] text-[#0075DE] border border-[#0075DE]/20"
+                              }`}>
+                                {isGoogle ? "Google" : "Email"}
+                              </span>
                             </div>
-                          )}
+                            <div className="text-[11px] text-black/50 truncate mt-0.5">
+                              {u.email || u.uid}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-black/50 mt-1 font-mono">
+                              <span>{u.conversationCount || 0} phiên chat</span>
+                              <span>${(u.totalCostUsd || 0).toFixed(4)}</span>
+                            </div>
+                          </div>
                         </button>
                       );
                     })
-                )}
-              </div>
-            </div>
-
-            {/* Cột phải: Chi tiết Tin nhắn, Thông tin người dùng & Đánh giá Bác sĩ */}
-            <div className={`flex-1 flex-col overflow-hidden bg-slate-950 ${
-              mobileUserView === "messages" ? "flex" : "hidden lg:flex"
-            }`}>
-              {/* Nút quay lại danh sách hội thoại trên Mobile */}
-              <div className="lg:hidden p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMobileUserView("convs")}
-                  className="text-xs text-teal-400 hover:text-teal-300 font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Danh Sách Hội Thoại ({userConvs.length})</span>
-                </button>
-                <span className="text-[11px] text-slate-300 font-medium truncate max-w-[170px]">
-                  {selectedConv?.title || "Nội dung chat"}
-                </span>
-              </div>
-              {/* Thẻ Hồ sơ & Thống kê Người Dùng */}
-              {selectedUser && (
-                <div className="px-6 py-3.5 border-b border-slate-800 bg-slate-900/80 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-teal-800 border border-teal-600 flex items-center justify-center font-bold text-sm text-white shrink-0">
-                      {selectedUser.displayName ? selectedUser.displayName.charAt(0).toUpperCase() : "U"}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-white">{selectedUser.displayName || "Người dùng"}</h3>
-                        <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold uppercase ${
-                          selectedUser.providerId === "google.com"
-                            ? "bg-red-950 text-red-300 border border-red-800"
-                            : "bg-blue-950 text-blue-300 border border-blue-800"
-                        }`}>
-                          {selectedUser.providerId === "google.com" ? "Tài khoản Google (google.com)" : "Tài khoản Email & Mật khẩu (password)"}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                        <span>Email: <strong className="text-slate-200">{selectedUser.email || "Không có email"}</strong></span>
-                        <span>•</span>
-                        <span>UID: <code className="text-teal-400 text-[10px]">{selectedUser.uid}</code></span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1 flex flex-wrap items-center gap-3">
-                        <span>Ngày tạo: {selectedUser.creationTime || (selectedUser.createdAt ? new Date(selectedUser.createdAt).toLocaleDateString() : "Gần đây")}</span>
-                        <span>•</span>
-                        <span>Lần đăng nhập cuối: {selectedUser.lastSignInTime || (selectedUser.lastLoginAt ? new Date(selectedUser.lastLoginAt).toLocaleString() : "Hôm nay")}</span>
-                        <span>•</span>
-                        <span className="text-emerald-400 font-medium">Mật khẩu: Đã băm Scrypt (Firebase Auth)</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Chỉ số Thống kê định lượng Token & Chi phí */}
-                  <div className="flex items-center gap-4 text-xs font-mono">
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-500 block uppercase">Hội thoại / Tin nhắn</span>
-                      <span className="text-white font-bold">{selectedUser.conversationCount ?? 0} chats / {selectedUser.totalMessagesCount ?? 0} msgs</span>
-                    </div>
-                    <div className="h-6 w-px bg-slate-800" />
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-500 block uppercase">Token tiêu thụ</span>
-                      <span className="text-teal-400 font-bold">{(selectedUser.totalTokensEstimated ?? 0).toLocaleString()}</span>
-                    </div>
-                    <div className="h-6 w-px bg-slate-800" />
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-500 block uppercase">Chi phí ước tính</span>
-                      <span className="text-amber-400 font-bold">
-                        ${(selectedUser.totalCostUsd ?? 0).toFixed(4)} (~{(selectedUser.totalCostVnd ?? 0).toLocaleString()}đ)
-                      </span>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
-              {selectedConv ? (
-                <>
-                  {/* Top Bar of Chat Inspector */}
-                  <div className="px-6 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
-                    <div>
-                      <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                        <span>{selectedConv.title}</span>
-                        <span className="text-[10px] text-slate-500 font-normal">
-                          (ID: {selectedConv.id})
-                        </span>
-                      </h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        Người dùng: <strong className="text-teal-400">{selectedUser?.displayName || selectedUser?.email}</strong>
-                      </p>
-                    </div>
+              </div>
 
-                    {/* Quick Rating Badge */}
-                    <div className="flex items-center gap-1.5 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700">
-                      <span className="text-[11px] text-slate-400">Đánh giá:</span>
-                      <div className="flex items-center">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Star
-                            key={star}
-                            className={`w-3.5 h-3.5 ${
-                              star <= (selectedConv.rating || 0)
-                                ? "text-amber-400 fill-amber-400"
-                                : "text-slate-600"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+              {/* Cột giữa: Danh sách Cuộc hội thoại & Tìm kiếm tin nhắn */}
+              <div className={`w-full lg:w-80 border-r border-black/8 flex-col bg-[#F6F5F4]/30 shrink-0 ${
+                mobileUserView === "convs" ? "flex" : "hidden lg:flex"
+              }`}>
+                {/* Nút quay lại trên Mobile */}
+                <div className="lg:hidden p-2.5 bg-[#F6F5F4] border-b border-black/8 flex items-center justify-between shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileUserView("users")}
+                    className="text-xs text-[#0075DE] hover:text-[#0062BD] font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Danh Sách Người Dùng</span>
+                  </button>
+                  <span className="text-[11px] text-black/60 font-medium truncate max-w-[150px]">
+                    {selectedUser?.displayName || selectedUser?.email}
+                  </span>
+                </div>
 
-                  {/* Body: Messages List */}
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {messagesLoading ? (
-                      <div className="p-12 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                        <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
-                        <span>Đang tải nội dung tin nhắn...</span>
-                      </div>
-                    ) : convMessages.length === 0 ? (
-                      <div className="p-12 text-center text-xs text-slate-500">
-                        Cuộc trò chuyện này chưa có tin nhắn nào.
-                      </div>
-                    ) : (
-                      convMessages.map((m, idx) => {
-                        const isUserMsg = m.role === "user";
-                        return (
-                          <div
-                            key={m.id || idx}
-                            className={`flex flex-col ${isUserMsg ? "items-end" : "items-start"}`}
-                          >
-                            <div className="flex items-center gap-2 mb-1 px-1 text-[10px] text-slate-500">
-                              <span className="font-semibold text-slate-400">
-                                {isUserMsg ? "Người dùng" : "LactaMed AI"}
-                              </span>
-                              <span>•</span>
-                              <span>{formatConversationTime(m.timestamp)}</span>
-                              {m.mode && (
-                                <span className="px-1.5 py-0.2 rounded bg-slate-800 text-teal-400 border border-slate-700">
-                                  {m.mode}
-                                </span>
-                              )}
-                              {m.safetyLevel && m.safetyLevel !== "None" && (
-                                <span className={`px-1.5 py-0.2 rounded font-bold ${
-                                  m.safetyLevel === "Compatible" ? "bg-emerald-950 text-emerald-400 border border-emerald-800" :
-                                  m.safetyLevel === "Caution" ? "bg-amber-950 text-amber-400 border border-amber-800" :
-                                  "bg-red-950 text-red-400 border border-red-800"
-                                }`}>
-                                  {m.safetyLevel}
-                                </span>
-                              )}
-                            </div>
-
-                            <div
-                              className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
-                                isUserMsg
-                                  ? "bg-teal-600 text-white rounded-br-xs"
-                                  : "bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-xs shadow-sm"
-                              }`}
-                            >
-                              <div
-                                className="prose prose-invert prose-xs max-w-none [&_p]:m-0 [&_ul]:my-1.5"
-                                dangerouslySetInnerHTML={{
-                                  __html: marked.parse(m.content || "", { breaks: true }) as string
-                                }}
-                              />
-
-                              {/* Trích dẫn y văn nếu có */}
-                              {m.citations && m.citations.length > 0 && (
-                                <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1">
-                                  <div className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                                    <FileText className="w-3 h-3 text-teal-400" />
-                                    <span>Căn cứ trích dẫn y văn ({m.citations.length}):</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {m.citations.map((c: any, cIdx: number) => (
-                                      <span
-                                        key={cIdx}
-                                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300"
-                                      >
-                                        [{c.documentName || c.DocumentName || "Y văn"}]
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Ý kiến thẩm định / đính chính của Bác sĩ nếu có */}
-                              {m.adminReview && (
-                                <div className="mt-3 p-2.5 bg-emerald-950/60 border border-emerald-800 rounded-xl text-[11px] text-emerald-300 space-y-1">
-                                  <div className="flex items-center justify-between font-bold text-emerald-400">
-                                    <span className="flex items-center gap-1">
-                                      <Stethoscope className="w-3.5 h-3.5 text-emerald-400" />
-                                      <span>Ý kiến Bác sĩ Thẩm định:</span>
-                                    </span>
-                                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-900 text-emerald-200 rounded font-semibold">
-                                      {m.adminReview.status === "resolved" ? "Đã giải quyết" : "Đang xem xét"}
-                                    </span>
-                                  </div>
-                                  {m.adminReview.correctedResponse && (
-                                    <div className="text-white bg-slate-950/60 p-2 rounded-lg border border-emerald-900/40">
-                                      <span className="text-emerald-400 font-semibold block text-[10px] uppercase">Nội dung đính chính:</span>
-                                      <span>{m.adminReview.correctedResponse}</span>
-                                    </div>
-                                  )}
-                                  {m.adminReview.notes && (
-                                    <div className="italic text-emerald-200/90 text-[10px]">
-                                      <span>Nhận xét: "{m.adminReview.notes}"</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
+                <div className="p-3 border-b border-black/8 space-y-2 bg-white">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xs font-semibold text-black uppercase tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-[#0075DE]" />
+                      <span>Hội thoại ({userConvs.length})</span>
+                    </h2>
+                    {selectedUser && (
+                      <button
+                        onClick={() => handleSelectUser(selectedUser)}
+                        className="p-1 text-black/40 hover:text-black rounded hover:bg-black/5 transition cursor-pointer"
+                        title="Nạp lại"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${convsLoading ? "animate-spin" : ""}`} />
+                      </button>
                     )}
                   </div>
 
-                  {/* Bottom: Doctor Evaluation & Notes Drawer */}
-                  <div className="p-4 border-t border-slate-800 bg-slate-900/60">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <Star className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-bold text-white">Thẩm định & Chấm điểm Cuộc trò chuyện</span>
+                  {/* Sub-tabs: Xem danh sách Chat vs Tìm kiếm tin nhắn */}
+                  <div className="flex bg-[#F6F5F4] p-1 rounded-lg border border-black/8 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setViewModeConv("conversations")}
+                      className={`flex-1 py-1 rounded font-medium transition cursor-pointer ${
+                        viewModeConv === "conversations" ? "bg-white text-black shadow-2xs" : "text-black/60 hover:text-black"
+                      }`}
+                    >
+                      Danh sách chat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewModeConv("search_results")}
+                      className={`flex-1 py-1 rounded font-medium transition cursor-pointer ${
+                        viewModeConv === "search_results" ? "bg-[#0075DE] text-white" : "text-black/60 hover:text-black"
+                      }`}
+                    >
+                      Tìm trong tin nhắn
+                    </button>
+                  </div>
+
+                  {viewModeConv === "conversations" ? (
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-black/40 absolute left-2.5 top-2.5" />
+                      <input
+                        type="text"
+                        value={convSearchQuery}
+                        onChange={(e) => setConvSearchQuery(e.target.value)}
+                        placeholder="Lọc tiêu đề cuộc trò chuyện..."
+                        className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
+                      />
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSearchMessages} className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={msgSearchQuery}
+                        onChange={(e) => setMsgSearchQuery(e.target.value)}
+                        placeholder="Tìm từ khóa trong tin nhắn..."
+                        className="flex-1 bg-[#F6F5F4] border border-black/10 rounded-lg px-2.5 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSearchingMessages || !msgSearchQuery.trim()}
+                        className="px-2.5 py-1.5 bg-[#0075DE] hover:bg-[#0062BD] text-white rounded-lg text-xs font-medium disabled:opacity-50 transition cursor-pointer"
+                      >
+                        {isSearchingMessages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tìm"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                {/* Danh sách Hội thoại hoặc Kết quả tìm kiếm tin nhắn */}
+                <div className="flex-1 overflow-y-auto divide-y divide-black/5">
+                  {viewModeConv === "search_results" ? (
+                    isSearchingMessages ? (
+                      <div className="p-8 text-center text-xs text-black/40 flex flex-col items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin text-[#0075DE]" />
+                        <span>Đang tìm kiếm sâu trong tin nhắn...</span>
                       </div>
-                      {evalSavedSuccess && (
-                        <span className="text-xs text-emerald-400 flex items-center gap-1 font-semibold">
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>Đã lưu thẩm định y khoa!</span>
-                        </span>
+                    ) : foundMessages.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-black/40">
+                        {msgSearchQuery.trim() ? "Không tìm thấy tin nhắn nào chứa từ khóa này." : "Nhập từ khóa và bấm Tìm để quét tin nhắn."}
+                      </div>
+                    ) : (
+                      <div className="p-2 space-y-1.5">
+                        <div className="text-[10px] text-[#0075DE] font-semibold px-2">
+                          Tìm thấy {foundMessages.length} tin nhắn khớp:
+                        </div>
+                        {foundMessages.map((item, idx) => (
+                          <div
+                            key={idx}
+                            onClick={async () => {
+                              if (!selectedUser) return;
+                              const targetConv = userConvs.find(c => c.id === item.conversationId);
+                              if (targetConv) {
+                                await handleSelectConv(selectedUser.uid, targetConv);
+                              }
+                            }}
+                            className="p-2.5 rounded-lg bg-white border border-black/8 hover:border-[#0075DE]/60 cursor-pointer transition text-left space-y-1 shadow-2xs"
+                          >
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold text-black truncate max-w-[160px]">{item.conversationTitle}</span>
+                              <span className="text-black/50 font-mono text-[9px]">{item.message.role === "user" ? "User" : "Bot"}</span>
+                            </div>
+                            <p className="text-xs text-black/70 line-clamp-2">
+                              {item.message.content}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : convsLoading ? (
+                    <div className="p-8 text-center text-xs text-black/40 flex flex-col items-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#0075DE]" />
+                      <span>Đang tải các cuộc trò chuyện...</span>
+                    </div>
+                  ) : userConvs.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-black/40">
+                      Người dùng này chưa có cuộc trò chuyện nào.
+                    </div>
+                  ) : (
+                    userConvs
+                      .filter(c => !convSearchQuery.trim() || c.title.toLowerCase().includes(convSearchQuery.toLowerCase()))
+                      .map((conv) => {
+                        const isSelected = selectedConv?.id === conv.id;
+                        return (
+                          <button
+                            key={conv.id}
+                            onClick={() => selectedUser && handleSelectConv(selectedUser.uid, conv)}
+                            className={`w-full p-3 text-left transition cursor-pointer ${
+                              isSelected
+                                ? "bg-white border-l-2 border-[#0075DE] shadow-2xs text-black"
+                                : "hover:bg-black/5 text-black/80"
+                            }`}
+                          >
+                            <div className="text-xs font-semibold text-black truncate">
+                              {conv.title}
+                            </div>
+                            <div className="flex items-center justify-between mt-1.5 text-[10px] text-black/50">
+                              <span>{formatConversationTime(conv.createdAt)}</span>
+                              <div className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`w-2.5 h-2.5 ${
+                                      star <= (conv.rating || 0)
+                                        ? "text-[#FFB110] fill-[#FFB110]"
+                                        : "text-black/15"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            {conv.tags && conv.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {conv.tags.slice(0, 3).map((t, i) => (
+                                  <span key={i} className="text-[9px] px-1.5 py-0.2 rounded bg-[#F6F5F4] text-black/70 border border-black/10">
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+
+              {/* Cột phải: Chi tiết Cuộc hội thoại & Đánh giá chất lượng */}
+              <div className={`flex-1 flex-col overflow-hidden bg-white ${
+                mobileUserView === "messages" ? "flex" : "hidden lg:flex"
+              }`}>
+                {/* Mobile Back Button */}
+                <div className="lg:hidden p-2.5 bg-[#F6F5F4] border-b border-black/8 flex items-center justify-between shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileUserView("convs")}
+                    className="text-xs text-[#0075DE] hover:text-[#0062BD] font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Danh Sách Hội Thoại</span>
+                  </button>
+                  <span className="text-[11px] text-black/70 font-medium truncate max-w-[170px]">
+                    {selectedConv?.title}
+                  </span>
+                </div>
+
+                {selectedConv ? (
+                  <>
+                    {/* Header thông tin người dùng & phiên chat */}
+                    <div className="px-6 py-3.5 border-b border-black/8 bg-[#F6F5F4]/60 flex flex-wrap items-center justify-between gap-4">
+                      {selectedUser && (
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-black">{selectedUser.displayName || "Người dùng"}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                              selectedUser.providerId === "google.com" 
+                                ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/20" 
+                                : "bg-[#E6F3FE] text-[#0075DE] border border-[#0075DE]/20"
+                            }`}>
+                              {selectedUser.providerId === "google.com" ? "Google" : "Email"}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-black/50 mt-0.5 flex flex-wrap items-center gap-2">
+                            <span>Email: <strong className="text-black/80">{selectedUser.email || "Không có email"}</strong></span>
+                            <span>•</span>
+                            <span>UID: <code className="text-black/60 font-mono text-[10px]">{selectedUser.uid}</code></span>
+                          </div>
+                          <div className="text-[10px] text-black/50 mt-1 flex flex-wrap items-center gap-3">
+                            <span>Đăng ký: {new Date(selectedUser.createdAt).toLocaleDateString()}</span>
+                            <span>Đăng nhập gần nhất: {new Date(selectedUser.lastLoginAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Thống kê phiên chat */}
+                      {selectedUser && (
+                        <div className="flex items-center gap-4 text-right">
+                          <div>
+                            <span className="text-[10px] text-black/50 block uppercase">Hội thoại / Tin nhắn</span>
+                            <span className="text-xs font-semibold text-black font-mono">{selectedUser.conversationCount || 0} / {selectedUser.messageCount || 0}</span>
+                          </div>
+                          <div className="h-6 w-px bg-black/10" />
+                          <div>
+                            <span className="text-[10px] text-black/50 block uppercase">Token tiêu thụ</span>
+                            <span className="text-xs font-semibold text-[#0075DE] font-mono">{(selectedUser.totalTokensEstimated || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="h-6 w-px bg-black/10" />
+                          <div>
+                            <span className="text-[10px] text-black/50 block uppercase">Chi phí ước tính</span>
+                            <span className="text-xs font-semibold text-[#D97706] font-mono">${(selectedUser.totalCostUsd || 0).toFixed(4)}</span>
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {/* Rating selector */}
+                    {/* Sub-header cuộc trò chuyện hiện tại */}
+                    <div className="px-6 py-3 border-b border-black/8 flex items-center justify-between bg-white">
                       <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">Đánh giá chất lượng:</label>
-                        <div className="flex items-center gap-1">
+                        <h3 className="text-xs font-semibold text-black flex items-center gap-2">
+                          <span>{selectedConv.title}</span>
+                          <span className="text-[10px] text-black/40 font-normal">
+                            (ID: {selectedConv.id})
+                          </span>
+                        </h3>
+                        <p className="text-[10px] text-black/50 mt-0.5">
+                          Người dùng: <strong className="text-[#0075DE]">{selectedUser?.displayName || selectedUser?.email}</strong>
+                        </p>
+                      </div>
+
+                      {/* Quick Rating Badge */}
+                      <div className="flex items-center gap-1.5 bg-[#F6F5F4] px-3 py-1 rounded-full border border-black/8">
+                        <span className="text-[11px] text-black/60">Đánh giá:</span>
+                        <div className="flex items-center">
                           {[1, 2, 3, 4, 5].map((star) => (
-                            <button
+                            <Star
                               key={star}
-                              onClick={() => setEvalRating(star)}
-                              className="p-1 hover:scale-110 transition cursor-pointer"
-                            >
-                              <Star
-                                className={`w-5 h-5 ${
-                                  star <= evalRating ? "text-amber-400 fill-amber-400" : "text-slate-700"
-                                }`}
-                              />
-                            </button>
+                              className={`w-3.5 h-3.5 ${
+                                star <= (selectedConv.rating || 0)
+                                  ? "text-[#FFB110] fill-[#FFB110]"
+                                  : "text-black/15"
+                              }`}
+                            />
                           ))}
-                          <span className="text-xs font-bold text-amber-400 ml-1.5">{evalRating} / 5</span>
-                        </div>
-                      </div>
-
-                      {/* Tags */}
-                      <div className="md:col-span-2">
-                        <label className="block text-[11px] text-slate-400 mb-1">Gắn nhãn nhận xét:</label>
-                        <div className="flex flex-wrap gap-1.5 mb-1.5">
-                          {evalTags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 border border-teal-800"
-                            >
-                              <span>{tag}</span>
-                              <button onClick={() => handleRemoveTag(tag)} className="hover:text-white">✕</button>
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={evalTagInput}
-                            onChange={(e) => setEvalTagInput(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(evalTagInput); } }}
-                            placeholder="Nhập nhãn (ví dụ: Chuẩn y khoa, Cần thêm y văn...)"
-                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleAddTag(evalTagInput)}
-                            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700"
-                          >
-                            + Thêm
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Doctor Notes */}
-                      <div className="md:col-span-3">
-                        <label className="block text-[11px] text-slate-400 mb-1">Ghi chú chuyên môn:</label>
-                        <div className="flex items-start gap-2">
-                          <textarea
-                            value={evalNotes}
-                            onChange={(e) => setEvalNotes(e.target.value)}
-                            rows={2}
-                            placeholder="Nhập nhận xét chuyên môn, hướng dẫn điều chỉnh cho thuật toán hoặc đề xuất tài liệu..."
-                            className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none"
-                          />
-                          <button
-                            onClick={handleSaveEvaluation}
-                            disabled={savingEval}
-                            className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shrink-0"
-                          >
-                            {savingEval ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            <span>Lưu Thẩm Định</span>
-                          </button>
                         </div>
                       </div>
                     </div>
+
+                    {/* Body: Messages List */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {messagesLoading ? (
+                        <div className="p-12 text-center text-xs text-black/40 flex flex-col items-center gap-2">
+                          <Loader2 className="w-5 h-5 animate-spin text-[#0075DE]" />
+                          <span>Đang tải nội dung tin nhắn...</span>
+                        </div>
+                      ) : convMessages.length === 0 ? (
+                        <div className="p-12 text-center text-xs text-black/40">
+                          Cuộc trò chuyện này chưa có tin nhắn nào.
+                        </div>
+                      ) : (
+                        convMessages.map((m, idx) => {
+                          const isUserMsg = m.role === "user";
+                          const isBeingReviewed = reviewingMsgId === (m.id || idx);
+                          return (
+                            <div
+                              key={m.id || idx}
+                              className={`flex flex-col ${isUserMsg ? "items-end" : "items-start"}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1 px-1 text-[10px] text-black/40">
+                                <span className="font-semibold text-black/60">
+                                  {isUserMsg ? "Người dùng" : "LactaMed AI"}
+                                </span>
+                                <span>•</span>
+                                <span>{formatConversationTime(m.timestamp)}</span>
+                                {m.mode && (
+                                  <span className="px-1.5 py-0.2 rounded bg-[#F6F5F4] text-[#0075DE] border border-black/10">
+                                    {m.mode}
+                                  </span>
+                                )}
+                                {m.safetyLevel && m.safetyLevel !== "None" && (
+                                  <span className={`px-1.5 py-0.2 rounded font-bold ${
+                                    m.safetyLevel === "Compatible" ? "bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30" :
+                                    m.safetyLevel === "Caution" ? "bg-[#FEF3C7] text-[#D97706] border border-[#FFB110]/30" :
+                                    "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30"
+                                  }`}>
+                                    {m.safetyLevel}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div
+                                className={`max-w-[85%] rounded-xl px-4 py-3 text-xs leading-relaxed ${
+                                  isUserMsg
+                                    ? "bg-[#0075DE] text-white rounded-br-xs shadow-2xs"
+                                    : "bg-[#F6F5F4]/80 border border-black/8 text-black/90 rounded-bl-xs shadow-2xs"
+                                }`}
+                              >
+                                <div
+                                  className={`prose prose-xs max-w-none [&_p]:m-0 [&_ul]:my-1.5 ${isUserMsg ? "prose-invert text-white" : "text-black/85"}`}
+                                  dangerouslySetInnerHTML={{
+                                    __html: marked.parse(m.content || "", { breaks: true }) as string
+                                  }}
+                                />
+
+                                {/* Trích dẫn y văn nếu có */}
+                                {m.citations && m.citations.length > 0 && (
+                                  <div className="mt-3 pt-2.5 border-t border-black/8 space-y-1">
+                                    <div className="text-[10px] font-medium text-black/60 flex items-center gap-1">
+                                      <FileText className="w-3 h-3 text-[#0075DE]" />
+                                      <span>Căn cứ trích dẫn y văn ({m.citations.length}):</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {m.citations.map((c: any, cIdx: number) => (
+                                        <span
+                                          key={cIdx}
+                                          className="text-[10px] px-2 py-0.5 rounded bg-white border border-black/10 text-black/70"
+                                        >
+                                          [{c.documentName || c.DocumentName || "Y văn"}]
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Ý kiến thẩm định / đính chính của Bác sĩ nếu có */}
+                                {m.adminReview && (
+                                  <div className="mt-3 p-3 bg-[#D0F4D8]/40 border border-[#1AAE39]/30 rounded-xl space-y-1.5 text-black">
+                                    <div className="flex items-center justify-between font-semibold text-[#1AAE39]">
+                                      <span className="flex items-center gap-1">
+                                        <Stethoscope className="w-3.5 h-3.5 text-[#1AAE39]" />
+                                        <span>Ý kiến Bác sĩ Thẩm định:</span>
+                                      </span>
+                                      <span className="text-[9px] px-1.5 py-0.2 bg-[#D0F4D8] text-[#1AAE39] rounded font-semibold border border-[#1AAE39]/30">
+                                        {m.adminReview.status === "resolved" ? "Đã giải quyết" : "Đang xem xét"}
+                                      </span>
+                                    </div>
+                                    {m.adminReview.correctedResponse && (
+                                      <div className="p-2.5 bg-white rounded-lg border border-[#1AAE39]/20 text-[11px] text-black/85">
+                                        <span className="text-[#1AAE39] font-semibold block text-[10px] uppercase">Nội dung đính chính:</span>
+                                        <span>{m.adminReview.correctedResponse}</span>
+                                      </div>
+                                    )}
+                                    {m.adminReview.doctorNotes && (
+                                      <div className="text-[10px] text-black/60 italic">
+                                        Ghi chú: {m.adminReview.doctorNotes}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Nút mở form đính chính bác sĩ */}
+                                {!isUserMsg && !isBeingReviewed && (
+                                  <div className="mt-2.5 pt-2 border-t border-black/8 flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartReview(m)}
+                                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white hover:bg-black/5 text-[#0075DE] border border-black/10 font-medium flex items-center gap-1 transition cursor-pointer"
+                                    >
+                                      <Stethoscope className="w-3 h-3 text-[#0075DE]" />
+                                      <span>{m.adminReview ? "Chỉnh sửa thẩm định" : "Thẩm định / Đính chính"}</span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Form Thẩm Định / Đính Chính Bác Sĩ Inline */}
+                                {isBeingReviewed && (
+                                  <div className="mt-3 p-3 bg-white border border-[#0075DE]/30 rounded-xl space-y-2 animate-in fade-in text-black shadow-2xs">
+                                    <div className="flex items-center justify-between font-semibold text-xs text-[#0075DE]">
+                                      <span className="flex items-center gap-1.5">
+                                        <Stethoscope className="w-3.5 h-3.5 text-[#0075DE]" />
+                                        <span>Thẩm định lâm sàng cho câu trả lời này:</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={handleCancelReview}
+                                        className="text-black/40 hover:text-black cursor-pointer"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-[10px] text-black/70 font-medium mb-1">Câu trả lời đính chính chuẩn y khoa:</label>
+                                      <textarea
+                                        value={doctorCorrectedResponse}
+                                        onChange={(e) => setDoctorCorrectedResponse(e.target.value)}
+                                        rows={3}
+                                        placeholder="Nhập nội dung hiệu đính chính xác về thuốc, liều lượng, cảnh báo..."
+                                        className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-2 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] resize-none font-sans"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-[10px] text-black/70 font-medium mb-1">Lời dặn / Nhận xét chuyên môn:</label>
+                                      <textarea
+                                        value={doctorNotes}
+                                        onChange={(e) => setDoctorNotes(e.target.value)}
+                                        rows={2}
+                                        placeholder="Nhận xét lý do cần đính chính, tài liệu cần nạp thêm..."
+                                        className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-2 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] resize-none font-sans"
+                                      />
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={handleCancelReview}
+                                        className="px-3 py-1.5 rounded-lg bg-[#F6F5F4] hover:bg-black/5 text-black/70 text-xs font-medium cursor-pointer"
+                                      >
+                                        Hủy
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveDoctorReview(m.id || idx)}
+                                        disabled={savingDoctorReview || !doctorCorrectedResponse.trim()}
+                                        className="px-3.5 py-1.5 rounded-lg bg-[#0075DE] hover:bg-[#0062BD] text-white text-xs font-medium flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-2xs"
+                                      >
+                                        {savingDoctorReview ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                        <span>Lưu Thẩm Định</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Bottom Inspector: Đánh giá chất lượng & Thêm nhãn */}
+                    <div className="p-4 border-t border-black/8 bg-[#F6F5F4]/50">
+                      {evalSavedSuccess && (
+                        <div className="mb-2 p-2 rounded-lg bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30 text-xs flex items-center gap-1.5 font-medium animate-in fade-in">
+                          <Check className="w-4 h-4 text-[#1AAE39]" />
+                          <span>Đã lưu đánh giá & ghi chú của chuyên gia thành công!</span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {/* Rating selector */}
+                        <div>
+                          <label className="block text-[11px] text-black/60 mb-1 font-medium">Đánh giá chất lượng:</label>
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => setEvalRating(star)}
+                                className="p-1 hover:scale-110 transition cursor-pointer"
+                              >
+                                <Star
+                                  className={`w-5 h-5 ${
+                                    star <= evalRating ? "text-[#FFB110] fill-[#FFB110]" : "text-black/15"
+                                  }`}
+                                />
+                              </button>
+                            ))}
+                            <span className="text-xs font-bold text-[#D97706] ml-1.5 font-mono">{evalRating} / 5</span>
+                          </div>
+                        </div>
+
+                        {/* Tags */}
+                        <div className="md:col-span-2">
+                          <label className="block text-[11px] text-black/60 mb-1 font-medium">Gắn nhãn nhận xét:</label>
+                          <div className="flex flex-wrap gap-1.5 mb-1.5">
+                            {evalTags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-white text-black/80 border border-black/10 shadow-2xs"
+                              >
+                                <span>{tag}</span>
+                                <button onClick={() => handleRemoveTag(tag)} className="hover:text-[#F64932] cursor-pointer">✕</button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={evalTagInput}
+                              onChange={(e) => setEvalTagInput(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(evalTagInput); } }}
+                              placeholder="Nhập nhãn (ví dụ: Chuẩn y khoa, Cần thêm y văn...)"
+                              className="flex-1 bg-white border border-black/10 rounded-lg px-2.5 py-1 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddTag(evalTagInput)}
+                              className="px-2.5 py-1 bg-white hover:bg-black/5 text-black/80 text-xs font-medium rounded-lg border border-black/10 cursor-pointer shadow-2xs"
+                            >
+                              + Thêm
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Doctor Notes */}
+                        <div className="md:col-span-3">
+                          <label className="block text-[11px] text-black/60 mb-1 font-medium">Ghi chú chuyên môn:</label>
+                          <div className="flex items-start gap-2">
+                            <textarea
+                              value={evalNotes}
+                              onChange={(e) => setEvalNotes(e.target.value)}
+                              rows={2}
+                              placeholder="Nhập nhận xét chuyên môn, hướng dẫn điều chỉnh cho thuật toán hoặc đề xuất tài liệu..."
+                              className="flex-1 bg-white border border-black/10 rounded-xl p-2 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] resize-none"
+                            />
+                            <button
+                              onClick={handleSaveEvaluation}
+                              disabled={savingEval}
+                              className="px-4 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white font-medium text-xs rounded-lg flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
+                            >
+                              {savingEval ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              <span>Lưu Thẩm Định</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-black/40 text-xs gap-2">
+                    <MessageSquare className="w-8 h-8 text-black/20" />
+                    <span>Vui lòng chọn một người dùng và cuộc hội thoại để bắt đầu giám sát</span>
                   </div>
-                </>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
-                  <MessageSquare className="w-8 h-8 text-slate-700" />
-                  <span>Vui lòng chọn một người dùng và cuộc hội thoại để bắt đầu giám sát</span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
           </div>
         )}
 
@@ -1642,88 +1755,86 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* TAB 2: INCIDENTS HUB                                         */}
         {/* ============================================================= */}
         {activeTab === "incidents" && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* SUB-HEADER: Phân loại Nguồn Sự cố (Lỗi Hệ Thống Phát Hiện vs Lỗi Người Dùng Báo Cáo) */}
-            <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex-1 flex flex-col overflow-hidden bg-white">
+            {/* SUB-HEADER: Phân loại Nguồn Sự cố */}
+            <div className="bg-[#F6F5F4] border-b border-black/8 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIncidentCategoryTab("all")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                     incidentCategoryTab === "all"
-                      ? "bg-slate-700 text-white shadow-xs"
-                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                      ? "bg-white text-black shadow-2xs border border-black/8 font-semibold"
+                      : "text-black/60 hover:text-black hover:bg-black/5"
                   }`}
                 >
-                  <AlertCircle className="w-3.5 h-3.5" />
+                  <AlertCircle className="w-3.5 h-3.5 text-[#0075DE]" />
                   <span>Tất Cả ({incidentsList.length})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIncidentCategoryTab("system_detected")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition cursor-pointer ${
                     incidentCategoryTab === "system_detected"
-                      ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-xs"
-                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                      ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30 shadow-2xs font-semibold"
+                      : "text-black/60 hover:text-black hover:bg-black/5"
                   }`}
                 >
-                  <Cpu className="w-3.5 h-3.5 text-red-400" />
-                  <span>Lỗi Hệ Thống Phát Hiện</span>
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-950 text-red-400 border border-red-800">
-                    {systemIncidentsCount}
+                  <Cpu className="w-3.5 h-3.5 text-[#F64932]" />
+                  <span>Lỗi Hệ Thống Tự Phát Hiện</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-white text-[10px] text-[#F64932] border border-[#F64932]/20 font-bold">
+                    {incidentsList.filter(i => i.category === "system_detected" || (i.errorType && i.errorType !== "user_reported")).length}
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIncidentCategoryTab("user_reported")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition cursor-pointer ${
                     incidentCategoryTab === "user_reported"
-                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-xs"
-                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                      ? "bg-[#E6F3FE] text-[#0075DE] border border-[#0075DE]/30 shadow-2xs font-semibold"
+                      : "text-black/60 hover:text-black hover:bg-black/5"
                   }`}
                 >
-                  <User className="w-3.5 h-3.5 text-teal-400" />
+                  <User className="w-3.5 h-3.5 text-[#0075DE]" />
                   <span>Lỗi Người Dùng Báo Cáo</span>
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-950 text-teal-400 border border-teal-800">
-                    {userIncidentsCount}
+                  <span className="px-1.5 py-0.2 rounded-full bg-white text-[10px] text-[#0075DE] border border-[#0075DE]/20 font-bold">
+                    {incidentsList.filter(i => i.category === "user_reported" || i.errorType === "user_reported").length}
                   </span>
                 </button>
               </div>
 
-              {/* Status summary */}
-              <div className="text-xs text-slate-400 hidden sm:flex items-center gap-3">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                  <span>Chờ xử lý: <strong className="text-red-400">{pendingIncidentsCount}</strong></span>
-                </span>
-                <span>•</span>
-                <span>Đã giải quyết: <strong className="text-emerald-400">{incidentsList.filter(i => i.status === "resolved").length}</strong></span>
+              <div className="text-xs text-black/50 hidden md:block">
+                {incidentCategoryTab === "system_detected"
+                  ? "Sự cố timeout, quota API, lỗi mạng được hệ thống tự động ghi nhận"
+                  : incidentCategoryTab === "user_reported"
+                  ? "Khiếu nại, phản ánh thông tin và yêu cầu thẩm định từ người bệnh"
+                  : "Toàn bộ danh mục sự cố vận hành và phản hồi người bệnh"}
               </div>
             </div>
 
-            {/* Main Incidents Columns */}
+            {/* Nội dung 2 cột bên dưới */}
             <div className="flex-1 flex overflow-hidden">
               {/* Cột trái: Bộ lọc & Danh sách sự cố */}
-              <div className={`w-full lg:w-96 border-r border-slate-800 flex-col bg-slate-900/40 shrink-0 ${
+              <div className={`w-full lg:w-96 border-r border-black/8 flex-col bg-white shrink-0 ${
                 mobileIncidentView === "list" ? "flex" : "hidden lg:flex"
               }`}>
-                <div className="p-3 border-b border-slate-800 space-y-2">
+                <div className="p-3 border-b border-black/8 space-y-2 bg-white">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                    <h2 className="text-xs font-semibold text-black uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-[#F64932]" />
                       <span>Nhật ký Sự cố ({filteredIncidents.length})</span>
                     </h2>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Tình trạng:</label>
+                      <label className="block text-[10px] text-black/50 mb-0.5 font-medium">Tình trạng:</label>
                       <select
                         value={incidentStatusFilter}
                         onChange={(e) => setIncidentStatusFilter(e.target.value)}
-                        className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
+                        className="w-full text-xs bg-[#F6F5F4] border border-black/10 rounded-lg p-1.5 text-black focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                       >
                         <option value="all">Tất cả ({incidentsList.length})</option>
                         <option value="pending">Chờ xử lý ({incidentsList.filter(i => i.status === "pending").length})</option>
@@ -1733,11 +1844,11 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                     </div>
 
                     <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Loại lỗi:</label>
+                      <label className="block text-[10px] text-black/50 mb-0.5 font-medium">Loại lỗi:</label>
                       <select
                         value={incidentTypeFilter}
                         onChange={(e) => setIncidentTypeFilter(e.target.value)}
-                        className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
+                        className="w-full text-xs bg-[#F6F5F4] border border-black/10 rounded-lg p-1.5 text-black focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                       >
                         <option value="all">Tất cả loại lỗi</option>
                         <option value="user_reported">Người dùng báo lỗi</option>
@@ -1750,9 +1861,9 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </div>
 
                 {/* Danh sách các Incident Cards */}
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+                <div className="flex-1 overflow-y-auto divide-y divide-black/5">
                   {filteredIncidents.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-500">
+                    <div className="p-8 text-center text-xs text-black/40">
                       Không có sự cố nào trong mục lọc này.
                     </div>
                   ) : (
@@ -1765,45 +1876,45 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                           onClick={() => handleSelectIncident(inc)}
                           className={`w-full p-3 text-left transition cursor-pointer ${
                             isSelected
-                              ? "bg-red-950/40 border-l-2 border-red-500"
-                              : "hover:bg-slate-800/40 text-slate-300"
+                              ? "bg-[#E6F3FE] border-l-2 border-[#0075DE]"
+                              : "hover:bg-[#F6F5F4]/60 text-black/80"
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                              inc.status === "pending" ? "bg-red-950 text-red-400 border border-red-800" :
-                              inc.status === "in_review" ? "bg-amber-950 text-amber-400 border border-amber-800" :
-                              "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase ${
+                              inc.status === "pending" ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30" :
+                              inc.status === "in_review" ? "bg-[#FEF3C7] text-[#D97706] border border-[#FFB110]/30" :
+                              "bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30"
                             }`}>
                               {inc.status === "pending" ? "Chờ duyệt" : inc.status === "in_review" ? "Đang xử lý" : "Đã sửa"}
                             </span>
-                            <span className="text-[10px] text-slate-500">
+                            <span className="text-[10px] text-black/50">
                               {formatConversationTime(inc.createdAt)}
                             </span>
                           </div>
 
-                          <div className="text-xs font-semibold text-white line-clamp-1">
+                          <div className="text-xs font-semibold text-black line-clamp-1">
                             "{inc.userQuery}"
                           </div>
                           {inc.errorMessage && (
-                            <div className="text-[11px] text-red-300/80 line-clamp-1 mt-0.5">
+                            <div className="text-[11px] text-[#F64932] line-clamp-1 mt-0.5">
                               Lỗi: {inc.errorMessage}
                             </div>
                           )}
-                          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                          <div className="text-[10px] text-black/50 mt-1 flex items-center justify-between">
                             {isUserReport ? (
-                              <span className="inline-flex items-center gap-1 text-teal-400 font-medium truncate">
+                              <span className="inline-flex items-center gap-1 text-[#0075DE] font-medium truncate">
                                 <User className="w-3 h-3 shrink-0" />
                                 <span className="truncate">{inc.userEmail || inc.userId || "Khách"}</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-red-400 font-medium">
+                              <span className="inline-flex items-center gap-1 text-[#F64932] font-medium">
                                 <Cpu className="w-3 h-3 shrink-0" />
                                 <span>Hệ thống tự động phát hiện</span>
                               </span>
                             )}
                             {inc.correctedResponse && (
-                              <span className="text-[9px] px-1.5 py-0.2 bg-emerald-950/80 text-emerald-400 rounded border border-emerald-800 font-bold">
+                              <span className="text-[9px] px-1.5 py-0.2 bg-[#D0F4D8] text-[#1AAE39] rounded border border-[#1AAE39]/30 font-bold">
                                 Đã đính chính
                               </span>
                             )}
@@ -1815,186 +1926,178 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </div>
               </div>
 
-            {/* Cột phải: Chi tiết Sự cố & Công cụ Sửa lỗi Model */}
-            <div className={`flex-1 flex-col overflow-hidden bg-slate-950 ${
-              mobileIncidentView === "detail" ? "flex" : "hidden lg:flex"
-            }`}>
-              {/* Nút quay lại danh sách sự cố trên Mobile */}
-              <div className="lg:hidden p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMobileIncidentView("list")}
-                  className="text-xs text-teal-400 hover:text-teal-300 font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Danh Sách Sự Cố ({filteredIncidents.length})</span>
-                </button>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {selectedIncident ? `#${selectedIncident.id.slice(0, 8)}` : ""}
-                </span>
-              </div>
+              {/* Cột phải: Chi tiết Sự cố & Công cụ Sửa lỗi Model */}
+              <div className={`flex-1 flex-col overflow-hidden bg-[#F6F5F4]/30 ${
+                mobileIncidentView === "detail" ? "flex" : "hidden lg:flex"
+              }`}>
+                {/* Mobile Back Button */}
+                <div className="lg:hidden p-2.5 bg-white border-b border-black/8 flex items-center justify-between shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileIncidentView("list")}
+                    className="text-xs text-[#0075DE] hover:text-[#0062BD] font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Danh Sách Sự Cố</span>
+                  </button>
+                  <span className="text-[11px] text-black/50 font-mono">
+                    ID: {selectedIncident?.id}
+                  </span>
+                </div>
 
-              {selectedIncident ? (
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* Header Incident */}
-                  <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-red-400 uppercase">SỰ CỐ #{selectedIncident.id}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                          selectedIncident.status === "pending" ? "bg-red-500/20 text-red-300 border border-red-500/30" :
-                          selectedIncident.status === "in_review" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
-                          "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                        }`}>
-                          {selectedIncident.status.toUpperCase()}
+                {selectedIncident ? (
+                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                    {/* Header thông tin sự cố */}
+                    <div className="flex items-center justify-between pb-4 border-b border-black/8 bg-white p-4 rounded-xl shadow-2xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-sm font-semibold text-black">
+                            Chi Tiết Báo Cáo Sự Cố #{selectedIncident.id}
+                          </h2>
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                            selectedIncident.status === "pending" ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30" :
+                            selectedIncident.status === "in_review" ? "bg-[#FEF3C7] text-[#D97706] border border-[#FFB110]/30" :
+                            "bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30"
+                          }`}>
+                            {selectedIncident.status === "pending" ? "Chờ thẩm định" : selectedIncident.status === "in_review" ? "Đang xử lý" : "Đã giải quyết"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-black/50 mt-1">
+                          Thời gian: {formatConversationTime(selectedIncident.createdAt)} • Người báo cáo: <strong className="text-black/80">{selectedIncident.userEmail || "Hệ thống"}</strong>
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[10px] text-black/40 block font-mono">Loại sự cố:</span>
+                        <span className="text-xs font-semibold text-[#0075DE] font-mono">
+                          {selectedIncident.errorType || "user_reported"}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Thời gian tạo: {formatConversationTime(selectedIncident.createdAt)} • Người báo: {selectedIncident.userEmail || selectedIncident.userId}
-                      </p>
                     </div>
 
-                    {/* Quick switch to Knowledge Base */}
-                    <button
-                      onClick={() => {
-                        setActiveTab("knowledge");
-                        setCrawlUrl("");
-                      }}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Database className="w-3.5 h-3.5" />
-                      <span>Nạp Bổ Sung Y Văn</span>
-                    </button>
-                  </div>
+                    {/* Câu hỏi của người dùng */}
+                    <div className="p-4 bg-white rounded-xl border border-black/8 shadow-2xs">
+                      <div className="text-[11px] font-semibold text-black/50 mb-1 flex items-center gap-1.5 uppercase">
+                        <User className="w-3.5 h-3.5 text-[#0075DE]" />
+                        <span>Câu hỏi của Người bệnh / Bác sĩ:</span>
+                      </div>
+                      <div className="text-xs font-semibold text-black">
+                        "{selectedIncident.userQuery}"
+                      </div>
+                    </div>
 
-                  {/* Câu hỏi của người dùng */}
-                  <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800">
-                    <div className="text-[11px] font-bold text-slate-400 mb-1 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Câu hỏi của Người dùng:</span>
-                    </div>
-                    <div className="text-sm font-semibold text-white">
-                      {selectedIncident.userQuery}
-                    </div>
-                    {selectedIncident.errorMessage && (
-                      <div className="mt-2 p-2.5 bg-red-950/40 border border-red-800/50 rounded-xl text-xs text-red-300">
-                        <strong>Ghi chú phản ánh:</strong> {selectedIncident.errorMessage}
+                    {/* Câu trả lời bị báo lỗi */}
+                    {selectedIncident.botResponse && (
+                      <div className="p-4 bg-white rounded-xl border border-black/8 shadow-2xs">
+                        <div className="text-[11px] font-semibold text-black/50 mb-1 flex items-center gap-1.5 uppercase">
+                          <Cpu className="w-3.5 h-3.5 text-[#F64932]" />
+                          <span>Câu trả lời của AI tại thời điểm xảy ra sự cố:</span>
+                        </div>
+                        <div
+                          className="text-xs text-black/80 prose prose-xs max-w-none leading-relaxed [&_p]:m-0"
+                          dangerouslySetInnerHTML={{
+                            __html: marked.parse(selectedIncident.botResponse || "", { breaks: true }) as string
+                          }}
+                        />
                       </div>
                     )}
-                  </div>
 
-                  {/* Phản hồi gốc của Model (nếu có) */}
-                  {selectedIncident.botResponse && (
-                    <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800">
-                      <div className="text-[11px] font-bold text-slate-400 mb-1 flex items-center gap-1.5">
-                        <Cpu className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Phản hồi thực tế của AI bị báo lỗi:</span>
-                      </div>
-                      <div 
-                        className="text-xs text-slate-300 prose prose-invert prose-xs max-w-none leading-relaxed [&_p]:m-0"
-                        dangerouslySetInnerHTML={{
-                          __html: marked.parse(selectedIncident.botResponse, { breaks: true }) as string
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Khu vực Bác sĩ thẩm định & Soạn câu trả lời chuẩn xác */}
-                  <div className="p-5 bg-teal-950/30 rounded-2xl border border-teal-800/50 space-y-4">
-                    <div className="flex items-center gap-2 text-teal-400 font-bold text-xs uppercase tracking-wider">
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Hiệu chỉnh Chuyên môn & Khắc phục Sự cố</span>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Câu trả lời chuẩn y khoa sau khi thẩm định:
-                      </label>
-                      <textarea
-                        value={incidentCorrectedResponse}
-                        onChange={(e) => setIncidentCorrectedResponse(e.target.value)}
-                        rows={4}
-                        placeholder="Soạn câu trả lời chính xác, bổ sung liều lượng và cảnh báo cho người mẹ..."
-                        className="w-full bg-slate-900 border border-teal-900 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-400 resize-none font-sans leading-relaxed"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Ghi chú nội bộ dành cho bác sĩ & quản trị viên:
-                      </label>
-                      <textarea
-                        value={incidentAdminNotes}
-                        onChange={(e) => setIncidentAdminNotes(e.target.value)}
-                        rows={2}
-                        placeholder="Lý do sai lệch, hướng bổ sung dữ liệu trong đợt cập nhật tiếp theo..."
-                        className="w-full bg-slate-900 border border-teal-900 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-400 resize-none"
-                      />
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">Đổi trạng thái:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateIncidentStatus("pending")}
-                          className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition cursor-pointer ${
-                            selectedIncident.status === "pending"
-                              ? "bg-red-600 text-white"
-                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                          }`}
-                        >
-                          Chờ duyệt
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateIncidentStatus("in_review")}
-                          className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition cursor-pointer ${
-                            selectedIncident.status === "in_review"
-                              ? "bg-amber-600 text-white"
-                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                          }`}
-                        >
-                          Đang xem xét
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateIncidentStatus("resolved")}
-                          className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition cursor-pointer ${
-                            selectedIncident.status === "resolved"
-                              ? "bg-emerald-600 text-white"
-                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                          }`}
-                        >
-                          Đã giải quyết
-                        </button>
+                    {/* Form Điều chỉnh & Thẩm định Bác sĩ */}
+                    <div className="p-5 bg-white rounded-xl border border-black/8 shadow-2xs space-y-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider">
+                        <Stethoscope className="w-4 h-4" />
+                        <span>Khu Vực Thẩm Định Chuyên Môn & Hiệu Đính Cho Người Bệnh</span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateIncidentStatus(selectedIncident.status)}
-                        disabled={updatingIncident}
-                        className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-md shadow-teal-950"
-                      >
-                        {updatingIncident ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5" />
-                        )}
-                        <span>Lưu Thẩm Định & Đồng Bộ Cho Người Bệnh</span>
-                      </button>
+                      <div>
+                        <label className="block text-xs font-medium text-black/70 mb-1">
+                          Câu trả lời chuẩn y khoa sau khi thẩm định:
+                        </label>
+                        <textarea
+                          value={incidentCorrectedResponse}
+                          onChange={(e) => setIncidentCorrectedResponse(e.target.value)}
+                          rows={4}
+                          placeholder="Soạn câu trả lời chính xác, bổ sung liều lượng và cảnh báo cho người mẹ..."
+                          className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-3 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] resize-none font-sans leading-relaxed"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-black/70 mb-1">
+                          Ghi chú nội bộ dành cho bác sĩ & quản trị viên:
+                        </label>
+                        <textarea
+                          value={incidentAdminNotes}
+                          onChange={(e) => setIncidentAdminNotes(e.target.value)}
+                          rows={2}
+                          placeholder="Lý do sai lệch, hướng bổ sung dữ liệu trong đợt cập nhật tiếp theo..."
+                          className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-3 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] resize-none"
+                        />
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-black/50 font-medium">Đổi trạng thái:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateIncidentStatus("pending")}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition cursor-pointer ${
+                              selectedIncident.status === "pending"
+                                ? "bg-[#FFE4E6] text-[#F64932] border border-[#F64932]/30 font-semibold"
+                                : "bg-[#F6F5F4] text-black/70 hover:bg-black/5"
+                            }`}
+                          >
+                            Chờ duyệt
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateIncidentStatus("in_review")}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition cursor-pointer ${
+                              selectedIncident.status === "in_review"
+                                ? "bg-[#FEF3C7] text-[#D97706] border border-[#FFB110]/30 font-semibold"
+                                : "bg-[#F6F5F4] text-black/70 hover:bg-black/5"
+                            }`}
+                          >
+                            Đang xem xét
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateIncidentStatus("resolved")}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition cursor-pointer ${
+                              selectedIncident.status === "resolved"
+                                ? "bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30 font-semibold"
+                                : "bg-[#F6F5F4] text-black/70 hover:bg-black/5"
+                            }`}
+                          >
+                            Đã giải quyết
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateIncidentStatus(selectedIncident.status)}
+                          disabled={updatingIncident}
+                          className="px-4 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                        >
+                          {updatingIncident ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          <span>Lưu Thẩm Định & Đồng Bộ Cho Người Bệnh</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
-                  <AlertTriangle className="w-8 h-8 text-slate-700" />
-                  <span>Chọn một sự cố từ danh sách bên trái để kiểm tra và xử lý</span>
-                </div>
-              )}
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-black/40 text-xs gap-2">
+                    <AlertTriangle className="w-8 h-8 text-black/20" />
+                    <span>Chọn một sự cố từ danh sách bên trái để kiểm tra và xử lý</span>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
           </div>
         )}
 
@@ -2002,57 +2105,57 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* TAB 3: MODEL SETTINGS & QUOTA TRACKER                         */}
         {/* ============================================================= */}
         {activeTab === "models" && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full bg-[#F6F5F4]/30">
             {/* Top Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+              <div className="p-4 bg-white border border-black/8 rounded-xl shadow-2xs">
+                <div className="flex items-center justify-between text-black/50 text-xs mb-2">
                   <span>Mô Hình Đang Chạy</span>
-                  <Cpu className="w-4 h-4 text-teal-400" />
+                  <Cpu className="w-4 h-4 text-[#0075DE]" />
                 </div>
-                <div className="text-sm font-bold text-white truncate" title={modelConfig?.chatModel || modelConfig?.model}>
+                <div className="text-sm font-semibold text-black truncate" title={modelConfig?.chatModel || modelConfig?.model}>
                   {modelConfig?.chatModel || modelConfig?.model || "Đang tải..."}
                 </div>
-                <div className="text-[10px] text-teal-400 mt-1 font-mono">
+                <div className="text-[10px] text-[#0075DE] mt-1 font-mono">
                   Provider: {modelConfig?.provider.toUpperCase() || "GEMINI"}
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+              <div className="p-4 bg-white border border-black/8 rounded-xl shadow-2xs">
+                <div className="flex items-center justify-between text-black/50 text-xs mb-2">
                   <span>Tổng Yêu Cầu (Requests)</span>
-                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <Activity className="w-4 h-4 text-[#1AAE39]" />
                 </div>
-                <div className="text-xl font-bold text-white">
+                <div className="text-xl font-bold text-black font-mono">
                   {metrics?.totalChatRequests ?? 0}
                 </div>
-                <div className="text-[10px] text-emerald-400 mt-1">
+                <div className="text-[10px] text-[#1AAE39] mt-1">
                   {metrics?.successfulRequests ?? 0} thành công • {metrics?.failedRequests ?? 0} thất bại
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+              <div className="p-4 bg-white border border-black/8 rounded-xl shadow-2xs">
+                <div className="flex items-center justify-between text-black/50 text-xs mb-2">
                   <span>Ước Tính Token Tiêu Thụ</span>
-                  <Zap className="w-4 h-4 text-amber-400" />
+                  <Zap className="w-4 h-4 text-[#FFB110]" />
                 </div>
-                <div className="text-xl font-bold text-white">
-                  {((metrics?.totalTokensEstimated ?? 0) / 1000).toFixed(1)}k <span className="text-xs font-normal text-slate-400">tokens</span>
+                <div className="text-xl font-bold text-black font-mono">
+                  {((metrics?.totalTokensEstimated ?? 0) / 1000).toFixed(1)}k <span className="text-xs font-normal text-black/50">tokens</span>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">
+                <div className="text-[10px] text-black/50 mt-1">
                   In: {((metrics?.estimatedInputTokens ?? 0) / 1000).toFixed(1)}k • Out: {((metrics?.estimatedOutputTokens ?? 0) / 1000).toFixed(1)}k
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
+              <div className="p-4 bg-white border border-black/8 rounded-xl shadow-2xs">
+                <div className="flex items-center justify-between text-black/50 text-xs mb-2">
                   <span>Thời Gian Hoạt Động (Uptime)</span>
-                  <Clock className="w-4 h-4 text-indigo-400" />
+                  <Clock className="w-4 h-4 text-[#6B21A8]" />
                 </div>
-                <div className="text-xl font-bold text-white">
-                  {Math.floor((metrics?.uptimeSeconds ?? 0) / 60)} <span className="text-xs font-normal text-slate-400">phút</span>
+                <div className="text-xl font-bold text-black font-mono">
+                  {Math.floor((metrics?.uptimeSeconds ?? 0) / 60)} <span className="text-xs font-normal text-black/50">phút</span>
                 </div>
-                <div className="text-[10px] text-indigo-300 mt-1">
+                <div className="text-[10px] text-[#6B21A8] mt-1">
                   Đổi model gần nhất: {modelConfig?.lastSwitchedAtUtc ? new Date(modelConfig.lastSwitchedAtUtc).toLocaleTimeString() : "Ban đầu"}
                 </div>
               </div>
@@ -2060,8 +2163,8 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
             {/* Fallback Cascades Info Box */}
             {modelConfig?.chatModels && modelConfig.chatModels.length > 1 && (
-              <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider mb-2">
+              <div className="p-4 bg-white border border-black/8 rounded-xl shadow-2xs">
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider mb-2">
                   <Layers className="w-4 h-4" />
                   <span>Danh Sách Fallback Tự Động (Model Cascade Khi Quota/Error)</span>
                 </div>
@@ -2070,13 +2173,13 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                     <div key={idx} className="flex items-center gap-1.5">
                       <span className={`text-xs px-2.5 py-1 rounded-lg border font-mono ${
                         idx === 0 
-                          ? "bg-teal-950 text-teal-300 border-teal-700 font-bold"
-                          : "bg-slate-800 text-slate-300 border-slate-700"
+                          ? "bg-[#E6F3FE] text-[#0075DE] border-[#0075DE]/30 font-bold"
+                          : "bg-[#F6F5F4] text-black/70 border-black/10"
                       }`}>
                         {idx === 0 ? "★ " : `${idx + 1}. `}{m}
                       </span>
                       {idx < (modelConfig.chatModels?.length ?? 0) - 1 && (
-                        <span className="text-slate-600 text-xs">→</span>
+                        <span className="text-black/30 text-xs">→</span>
                       )}
                     </div>
                   ))}
@@ -2085,19 +2188,19 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
             )}
 
             {/* Form Cấu hình Hot-Swap Model */}
-            <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="p-6 bg-white border border-black/8 rounded-xl shadow-2xs space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-black/8">
                 <div className="flex items-center gap-2.5">
-                  <Sliders className="w-5 h-5 text-teal-400" />
+                  <Sliders className="w-5 h-5 text-[#0075DE]" />
                   <div>
-                    <h3 className="text-sm font-bold text-white">Chuyển Đổi Mô Hình AI Runtime (Hot-Swap)</h3>
-                    <p className="text-xs text-slate-400">Thay đổi nhà cung cấp, model và API key trực tiếp không cần khởi động lại máy chủ.</p>
+                    <h3 className="text-sm font-semibold text-black">Chuyển Đổi Mô Hình AI Runtime (Hot-Swap)</h3>
+                    <p className="text-xs text-black/50">Thay đổi nhà cung cấp, model và API key trực tiếp không cần khởi động lại máy chủ.</p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => loadModelConfigAndMetrics(adminKey)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+                  className="px-3 py-1.5 bg-[#F6F5F4] hover:bg-black/5 text-black text-xs font-medium rounded-lg border border-black/10 flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${modelLoading ? "animate-spin" : ""}`} />
                   <span>Tải lại</span>
@@ -2106,82 +2209,81 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
               <form onSubmit={handleSaveModelConfig} className="space-y-6">
                 {/* ========================================================= */}
-                {/* HEADER 1: MÔ HÌNH SINH VĂN BẢN (TEXT GENERATION - CASCADE) */}
+                {/* HEADER 1: NHÓM MÔ HÌNH CHAT LLM (CASCADE)                 */}
                 {/* ========================================================= */}
-                <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3.5">
+                <div className="p-4 bg-[#F6F5F4]/60 border border-black/8 rounded-xl space-y-3.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider">
                       <Cpu className="w-4 h-4" />
-                      <span>1. Mô Hình Sinh Văn Bản (Text Generation Models - Cascade Flow)</span>
+                      <span>1. Nhóm Mô Hình Sinh Lời Khuyên Y Khoa (Chat LLM Cascade)</span>
                     </div>
                     <button
                       type="button"
                       onClick={handleResetCascade}
-                      className="text-[11px] text-teal-400 hover:underline cursor-pointer"
+                      className="text-[11px] text-black/50 hover:text-[#0075DE] underline cursor-pointer"
                     >
-                      Khôi phục chuỗi chuẩn (3.5 ➔ 3.1 ➔ 2.5)
+                      Khôi phục mặc định
                     </button>
                   </div>
 
-                  <p className="text-xs text-slate-400">
-                    Chọn nhiều mô hình theo thứ tự ưu tiên. Khi mô hình đầu tiên hết hạn mức (Quota 429) hoặc xảy ra sự cố, hệ thống sẽ tự động chuyển đổi sang mô hình dự phòng tiếp theo theo chiều mũi tên.
+                  <p className="text-xs text-black/60 leading-relaxed">
+                    Chọn các mô hình để tự động xếp tầng (Cascade). Khi model chính gặp lỗi quota (429) hoặc timeout, hệ thống sẽ tự động chuyển sang model tiếp theo.
                   </p>
 
-                  {/* Thanh trực quan chuỗi mũi tên Cascade */}
-                  <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      Chuỗi Ưu Tiên Hiện Tại ({cascadeList.length} mô hình):
+                  {/* Danh sách các mô hình trong Cascade hiện tại */}
+                  <div className="p-3 bg-white border border-black/8 rounded-lg space-y-1.5">
+                    <div className="text-[10px] text-black/50 font-semibold uppercase tracking-wider">
+                      Thứ tự Cascade đang kích hoạt ({cascadeList.length} models):
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 min-h-[40px]">
+                    <div className="flex flex-wrap items-center gap-2">
                       {cascadeList.length === 0 ? (
-                        <span className="text-slate-500 text-xs italic">
-                          Chưa có mô hình nào trong chuỗi. Hệ thống sẽ sử dụng biến môi trường mặc định.
+                        <span className="text-black/40 text-xs italic">
+                          Chưa có model nào. Vui lòng bấm chọn bên dưới.
                         </span>
                       ) : (
-                        cascadeList.map((m, idx) => (
-                          <React.Fragment key={m}>
-                            {idx > 0 && <span className="text-teal-400 font-bold text-sm">➔</span>}
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-950 border border-teal-700 text-teal-200 text-xs font-mono font-bold shadow-sm">
-                              <span className="w-4 h-4 rounded-full bg-teal-800 text-[10px] text-teal-300 flex items-center justify-center font-bold">
-                                {idx + 1}
-                              </span>
-                              <span>{m}</span>
-                              {idx === 0 && (
-                                <span className="text-[9px] bg-emerald-900 text-emerald-300 px-1 py-0.2 rounded font-sans font-bold">
-                                  Active
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCascadeModel(m)}
-                                className="text-slate-400 hover:text-red-400 ml-1 cursor-pointer"
-                                title="Xóa khỏi chuỗi ưu tiên"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </React.Fragment>
+                        cascadeList.map((modelId, idx) => (
+                          <span
+                            key={modelId}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium border ${
+                              idx === 0 
+                                ? "bg-[#E6F3FE] text-[#0075DE] border-[#0075DE]/30" 
+                                : "bg-[#F6F5F4] text-black/80 border-black/10"
+                            }`}
+                          >
+                            <span className="text-[10px] text-black/40 font-sans">#{idx + 1}</span>
+                            <span>{modelId}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCascadeModel(modelId)}
+                              className="text-black/40 hover:text-[#F64932] ml-1 cursor-pointer"
+                              title="Xóa khỏi danh sách"
+                            >
+                              ✕
+                            </button>
+                          </span>
                         ))
                       )}
                     </div>
                   </div>
 
-                  {/* Danh sách đề xuất mô hình từ catalog */}
+                  {/* Lưới các mô hình Gemini đề xuất */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-bold text-slate-300">
-                        Mô Hình Khuyên Dùng Cho Lâm Sàng (Bấm thẻ để thêm/bớt khỏi chuỗi):
+                      <label className="text-xs font-semibold text-black">
+                        Các Mô Hình Google Gemini Được Khuyên Dùng:
                       </label>
-                      <span className="text-[10px] text-teal-400 font-medium">Hạn mức cao, phản hồi nhanh</span>
+                      <span className="text-[10px] text-black/40">
+                        Nhấn vào thẻ để Thêm / Bỏ khỏi Cascade
+                      </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {((modelsCatalog?.googleStudio?.chatModels?.filter(m => m.recommended || ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"].includes(m.id)) || [
-                        { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite", tag: "Mới nhất - Cascade 1", rpm: "3 / 15", tpm: "4.42K / 250K", rpd: "29 / 500", desc: "Tối ưu tốc độ, chi phí thấp, hạn mức cao 500 RPD" },
-                        { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", tag: "Dự phòng - Cascade 2", rpm: "0 / 15", tpm: "0 / 250K", rpd: "0 / 500", desc: "Thế hệ 3.1 Flash Lite, 500 RPD, độ trễ cực thấp" },
-                        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "Flagship 2.5", rpm: "0 / 5", tpm: "0 / 250K", rpd: "0 / 20", desc: "Chất lượng lâm sàng cao, phân tích y văn chính xác" },
-                        { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", tag: "Ngữ cảnh 1M", rpm: "0 / 15", tpm: "0 / 1M", rpd: "0 / 1500", desc: "Ổn định cao, ngữ cảnh 1M tokens" },
-                        { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", tag: "Suy luận sâu", rpm: "0 / 2", tpm: "0 / 32K", rpd: "0 / 50", desc: "Phân tích y khoa đa nguồn cho các ca bệnh khó" }
+                      {((modelsCatalog?.googleStudio?.chatModels?.slice(0, 6) || [
+                        { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite", rpm: "15 / 15", tpm: "249.95K / 250K", rpd: "976 / 1K", desc: "Mô hình siêu nhanh thế hệ mới", tag: "Ưu tiên số 1" },
+                        { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", rpm: "15 / 15", tpm: "250K / 250K", rpd: "1K / 1K", desc: "Model flash lite thế hệ 3.1 ổn định", tag: "Dự phòng 1" },
+                        { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", rpm: "15 / 15", tpm: "250K / 250K", rpd: "1K / 1K", desc: "Model dự phòng chi phí thấp", tag: "Dự phòng 2" },
+                        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", rpm: "15 / 15", tpm: "1M / 1M", rpd: "1.5K / 1.5K", desc: "Năng lực suy luận y khoa sâu", tag: "Hiệu năng cao" },
+                        { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", rpm: "15 / 15", tpm: "1M / 1M", rpd: "1.5K / 1.5K", desc: "Model 1.5 kinh điển tin cậy", tag: "Tiêu chuẩn" }
                       ]) as ModelCatalogItem[]).map((m) => {
                         const inCascadeIndex = cascadeList.indexOf(m.id);
                         const isInCascade = inCascadeIndex !== -1;
@@ -2191,27 +2293,27 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                             onClick={() => handleToggleCascadeModel(m.id)}
                             className={`p-3 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
                               isInCascade
-                                ? "bg-teal-950/60 border-teal-500 text-teal-200 shadow-sm"
-                                : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700"
+                                ? "bg-[#E6F3FE] border-[#0075DE] text-black shadow-2xs"
+                                : "bg-white border-black/8 text-black/80 hover:border-black/20"
                             }`}
                           >
                             <div>
                               <div className="flex items-center justify-between gap-1 mb-1">
-                                <span className="text-xs font-mono font-bold truncate">{m.name}</span>
-                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                                  isInCascade ? "bg-teal-800 text-teal-200" : "bg-slate-800 text-slate-400"
+                                <span className="text-xs font-mono font-semibold truncate">{m.name}</span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase ${
+                                  isInCascade ? "bg-[#0075DE] text-white" : "bg-black/6 text-black/60"
                                 }`}>
                                   {isInCascade ? `Thứ tự #${inCascadeIndex + 1}` : "+ Thêm"}
                                 </span>
                               </div>
-                              <span className="text-[10px] text-teal-400/90 font-medium block">{m.tag}</span>
-                              <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">{m.desc}</p>
+                              <span className="text-[10px] text-[#0075DE] font-medium block">{m.tag}</span>
+                              <p className="text-[10px] text-black/50 mt-1 line-clamp-2">{m.desc}</p>
                             </div>
                             {m.rpm && (
-                              <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[9px] font-mono text-slate-400">
-                                <span>RPM: <strong className="text-slate-200">{m.rpm}</strong></span>
-                                <span>TPM: <strong className="text-slate-200">{m.tpm}</strong></span>
-                                <span>RPD: <strong className="text-slate-200">{m.rpd}</strong></span>
+                              <div className="mt-2 pt-1.5 border-t border-black/8 flex items-center justify-between text-[9px] font-mono text-black/50">
+                                <span>RPM: <strong className="text-black/80">{m.rpm}</strong></span>
+                                <span>TPM: <strong className="text-black/80">{m.tpm}</strong></span>
+                                <span>RPD: <strong className="text-black/80">{m.rpd}</strong></span>
                               </div>
                             )}
                           </div>
@@ -2224,13 +2326,13 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       <button
                         type="button"
                         onClick={() => setShowAllModels(!showAllModels)}
-                        className="text-xs text-teal-400 hover:text-teal-300 font-semibold flex items-center gap-1.5 py-1.5 cursor-pointer"
+                        className="text-xs text-[#0075DE] hover:text-[#0062BD] font-semibold flex items-center gap-1.5 py-1.5 cursor-pointer"
                       >
                         <span>{showAllModels ? "▲ Thu gọn các mô hình khác" : `▼ Xem thêm các mô hình Gemini khác (${modelsCatalog?.googleStudio?.chatModels ? Math.max(0, modelsCatalog.googleStudio.chatModels.length - 5) : 11} models)`}</span>
                       </button>
 
                       {showAllModels && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-2.5 pt-2.5 border-t border-slate-800 animate-in fade-in">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-2.5 pt-2.5 border-t border-black/8 animate-in fade-in">
                           {((modelsCatalog?.googleStudio?.chatModels?.filter(m => !["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"].includes(m.id)) || []) as ModelCatalogItem[]).map((m) => {
                             const inCascadeIndex = cascadeList.indexOf(m.id);
                             const isInCascade = inCascadeIndex !== -1;
@@ -2240,24 +2342,24 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                                 onClick={() => handleToggleCascadeModel(m.id)}
                                 className={`p-3 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
                                   isInCascade
-                                    ? "bg-teal-950/60 border-teal-500 text-teal-200 shadow-sm"
-                                    : "bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700"
+                                    ? "bg-[#E6F3FE] border-[#0075DE] text-black shadow-2xs"
+                                    : "bg-white border-black/8 text-black/80 hover:border-black/20"
                                 }`}
                               >
                                 <div>
                                   <div className="flex items-center justify-between gap-1 mb-1">
-                                    <span className="text-xs font-mono font-bold truncate">{m.name}</span>
-                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                                      isInCascade ? "bg-teal-800 text-teal-200" : "bg-slate-800 text-slate-400"
+                                    <span className="text-xs font-mono font-semibold truncate">{m.name}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase ${
+                                      isInCascade ? "bg-[#0075DE] text-white" : "bg-black/6 text-black/60"
                                     }`}>
                                       {isInCascade ? `Thứ tự #${inCascadeIndex + 1}` : "+ Thêm"}
                                     </span>
                                   </div>
-                                  <span className="text-[10px] text-slate-400 font-medium block">{m.tag || m.category}</span>
-                                  <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">{m.desc}</p>
+                                  <span className="text-[10px] text-black/50 font-medium block">{m.tag || m.category}</span>
+                                  <p className="text-[10px] text-black/50 mt-1 line-clamp-1">{m.desc}</p>
                                 </div>
                                 {m.rpm && (
-                                  <div className="mt-2 pt-1 border-t border-slate-800/60 flex items-center justify-between text-[9px] font-mono text-slate-500">
+                                  <div className="mt-2 pt-1 border-t border-black/8 flex items-center justify-between text-[9px] font-mono text-black/50">
                                     <span>RPM: {m.rpm}</span>
                                     <span>TPM: {m.tpm}</span>
                                     <span>RPD: {m.rpd}</span>
@@ -2272,13 +2374,13 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                   </div>
 
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-xs text-slate-400 whitespace-nowrap">Chuỗi model tùy chỉnh:</span>
+                    <span className="text-xs text-black/60 whitespace-nowrap">Chuỗi model tùy chỉnh:</span>
                     <input
                       type="text"
                       value={editChatModel}
                       onChange={(e) => { setEditChatModel(e.target.value); setTestResult(null); }}
                       placeholder="gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-2.5-flash-lite..."
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+                      className="flex-1 bg-white border border-black/10 rounded-lg px-3.5 py-1.5 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] font-mono"
                     />
                   </div>
                 </div>
@@ -2286,13 +2388,13 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 {/* ========================================================= */}
                 {/* HEADER 2: MÔ HÌNH VECTOR EMBEDDING (GOOGLE AI STUDIO)      */}
                 {/* ========================================================= */}
-                <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
+                <div className="p-4 bg-[#F6F5F4]/60 border border-black/8 rounded-xl space-y-3.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider">
                     <Database className="w-4 h-4" />
                     <span>2. Mô Hình Tính Toán Vector Embedding (Cố Định Google AI Studio)</span>
                   </div>
 
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-black/60">
                     Cố định sử dụng Google AI Studio với định dạng vector 3072 chiều để đồng bộ và truy vấn chính xác 100% trên Qdrant Vector Cloud.
                   </p>
 
@@ -2308,29 +2410,26 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                           onClick={() => { setEditEmbeddingModel(em.id); setTestResult(null); }}
                           className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                             isSelected
-                              ? "bg-teal-950/60 border-teal-500 text-teal-200 shadow-sm"
-                              : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                              ? "bg-[#E6F3FE] border-[#0075DE] text-black shadow-2xs"
+                              : "bg-white border-black/8 text-black/80 hover:border-black/20"
                           }`}
                         >
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-mono font-bold text-white">{em.name}</span>
+                              <span className="text-xs font-mono font-semibold text-black">{em.name}</span>
                               <span className={`text-[9px] px-2 py-0.2 rounded-full font-bold uppercase ${
-                                isSelected ? "bg-teal-800 text-teal-200" : "bg-slate-800 text-slate-500"
+                                isSelected ? "bg-[#0075DE] text-white" : "bg-black/6 text-black/60"
                               }`}>
-                                {isSelected ? "Đang Chọn" : "Dự Phòng"}
+                                {isSelected ? "ĐANG CHỌN" : "CHỌN"}
                               </span>
                             </div>
-                            <span className="text-[10px] text-teal-400 font-semibold">{em.tag}</span>
-                            <p className="text-[10px] text-slate-400 mt-1">{em.desc}</p>
+                            <span className="text-[10px] text-[#0075DE] font-medium block">{em.tag}</span>
+                            <p className="text-[10px] text-black/50 mt-1">{em.desc}</p>
                           </div>
-                          {em.rpm && (
-                            <div className="mt-2 pt-2 border-t border-slate-800 text-[9px] font-mono text-slate-400 flex justify-between">
-                              <span>RPM: <strong>{em.rpm}</strong></span>
-                              <span>TPM: <strong>{em.tpm}</strong></span>
-                              <span>RPD: <strong>{em.rpd}</strong></span>
-                            </div>
-                          )}
+                          <div className="mt-2 pt-2 border-t border-black/8 flex items-center justify-between text-[10px] font-mono text-black/60">
+                            <span>Kích thước: <strong>{em.dimensions}D</strong></span>
+                            <span>RPM: {em.rpm}</span>
+                          </div>
                         </div>
                       );
                     })}
@@ -2338,77 +2437,60 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </div>
 
                 {/* ========================================================= */}
-                {/* HEADER 3: TÙY CHỌN PROVIDER BÊN NGOÀI (9ROUTER / OPENAI)   */}
+                {/* HEADER 3: NHÀ CUNG CẤP & KHÓA KẾT NỐI RUNTIME              */}
                 {/* ========================================================= */}
-                <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 uppercase tracking-wider">
-                    <Globe className="w-4 h-4" />
-                    <span>3. Tùy Chọn Nhà Cung Cấp Bên Ngoài (9router / OpenRouter)</span>
+                <div className="p-4 bg-[#F6F5F4]/60 border border-black/8 rounded-xl space-y-3.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider">
+                    <KeyRound className="w-4 h-4" />
+                    <span>3. Nhà Cung Cấp & Khóa Kết Nối Runtime</span>
                   </div>
-
-                  <p className="text-xs text-slate-400">
-                    Chỉ áp dụng để sinh câu trả lời văn bản (Text Generation). Hệ thống tự động bảo lưu Google AI Studio Embedding để không làm gián đoạn cơ sở dữ liệu vector.
-                  </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div
-                      onClick={() => {
-                        setEditProvider("gemini");
-                        setEditBaseUrl("https://generativelanguage.googleapis.com");
-                        setTestResult(null);
-                      }}
-                      className={`p-3.5 rounded-xl border-2 flex items-start gap-3 cursor-pointer transition ${
-                        editProvider === "gemini"
-                          ? "bg-teal-950/40 border-teal-500 text-white"
-                          : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                      onClick={() => { setEditProvider("gemini"); setEditBaseUrl("https://generativelanguage.googleapis.com"); setTestResult(null); }}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                        editProvider === "gemini" 
+                          ? "bg-[#E6F3FE] border-[#0075DE] text-black shadow-2xs" 
+                          : "bg-white border-black/8 text-black/80 hover:border-black/20"
                       }`}
                     >
-                      <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                        editProvider === "gemini" ? "border-teal-400" : "border-slate-600"
-                      }`}>
-                        {editProvider === "gemini" && <div className="w-2 h-2 rounded-full bg-teal-400" />}
+                      <div className="w-8 h-8 rounded-lg bg-[#E6F3FE] text-[#0075DE] flex items-center justify-center border border-[#0075DE]/20 shrink-0">
+                        <Sparkles className="w-4 h-4" />
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-white">Google AI Studio</span>
-                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-bold">100% Free</span>
+                          <span className="text-xs font-semibold text-black">Google AI Studio</span>
+                          <span className="text-[9px] bg-[#D0F4D8] text-[#1AAE39] px-1.5 py-0.2 rounded font-bold border border-[#1AAE39]/30">Chính Thức</span>
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Sử dụng API chính hãng của Google AI Studio.</p>
+                        <p className="text-[10px] text-black/50 mt-0.5">Trực tiếp từ Google AI Studio API, hỗ trợ Gemini 2.5/3.5 và Embedding 3072D.</p>
                       </div>
                     </div>
 
                     <div
-                      onClick={() => {
-                        setEditProvider("custom_openai");
-                        setEditBaseUrl("https://api.9router.com/v1");
-                        setEditChatModel("gpt-4o-mini");
-                        setTestResult(null);
-                      }}
-                      className={`p-3.5 rounded-xl border-2 flex items-start gap-3 cursor-pointer transition ${
-                        editProvider === "custom_openai"
-                          ? "bg-indigo-950/40 border-indigo-500 text-white"
-                          : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700"
+                      onClick={() => { setEditProvider("custom_openai"); setEditBaseUrl("https://api.9router.com/v1"); setTestResult(null); }}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                        editProvider === "custom_openai" 
+                          ? "bg-[#E6F3FE] border-[#0075DE] text-black shadow-2xs" 
+                          : "bg-white border-black/8 text-black/80 hover:border-black/20"
                       }`}
                     >
-                      <div className={`w-4 h-4 rounded-full border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                        editProvider === "custom_openai" ? "border-indigo-400" : "border-slate-600"
-                      }`}>
-                        {editProvider === "custom_openai" && <div className="w-2 h-2 rounded-full bg-indigo-400" />}
+                      <div className="w-8 h-8 rounded-lg bg-[#E0E7FF] text-[#1313BA] flex items-center justify-center border border-[#1313BA]/20 shrink-0">
+                        <Globe className="w-4 h-4" />
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-white">Bên Thứ Ba (9router / OpenRouter)</span>
-                          <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-bold">OpenAI Gateway</span>
+                          <span className="text-xs font-semibold text-black">Bên Thứ Ba (9router / OpenRouter)</span>
+                          <span className="text-[9px] bg-[#E0E7FF] text-[#1313BA] px-1.5 py-0.2 rounded font-bold border border-[#1313BA]/20">OpenAI Gateway</span>
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Cổng API router ngoài cho phép sử dụng OpenAI, DeepSeek, Claude.</p>
+                        <p className="text-[10px] text-black/50 mt-0.5">Cổng API router ngoài cho phép sử dụng OpenAI, DeepSeek, Claude.</p>
                       </div>
                     </div>
                   </div>
 
                   {editProvider === "custom_openai" && (
-                    <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl space-y-3 animate-in fade-in">
+                    <div className="p-3.5 bg-white border border-black/8 rounded-lg space-y-3 animate-in fade-in shadow-2xs">
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        <label className="block text-[11px] font-semibold text-black mb-1.5">
                           Chọn Nhanh Cổng Provider Router:
                         </label>
                         <div className="flex flex-wrap gap-2">
@@ -2419,10 +2501,10 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                               setEditChatModel("gpt-4o-mini");
                               setTestResult(null);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
                               editBaseUrl.includes("9router")
-                                ? "bg-indigo-900/60 text-indigo-300 border-indigo-500"
-                                : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                                ? "bg-[#E0E7FF] text-[#1313BA] border-[#1313BA]/40"
+                                : "bg-[#F6F5F4] text-black/70 border-black/10 hover:text-black"
                             }`}
                           >
                             ★ 9router AI Gateway
@@ -2434,10 +2516,10 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                               setEditChatModel("deepseek/deepseek-chat");
                               setTestResult(null);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
                               editBaseUrl.includes("openrouter")
-                                ? "bg-indigo-900/60 text-indigo-300 border-indigo-500"
-                                : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                                ? "bg-[#E0E7FF] text-[#1313BA] border-[#1313BA]/40"
+                                : "bg-[#F6F5F4] text-black/70 border-black/10 hover:text-black"
                             }`}
                           >
                             OpenRouter
@@ -2449,10 +2531,10 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                               setEditChatModel("gpt-4o-mini");
                               setTestResult(null);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ${
                               editBaseUrl.includes("openai.com")
-                                ? "bg-indigo-900/60 text-indigo-300 border-indigo-500"
-                                : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                                ? "bg-[#E0E7FF] text-[#1313BA] border-[#1313BA]/40"
+                                : "bg-[#F6F5F4] text-black/70 border-black/10 hover:text-black"
                             }`}
                           >
                             OpenAI Official
@@ -2461,7 +2543,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        <label className="block text-[11px] font-semibold text-black mb-1">
                           Base URL của Router:
                         </label>
                         <input
@@ -2469,12 +2551,12 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                           value={editBaseUrl}
                           onChange={(e) => { setEditBaseUrl(e.target.value); setTestResult(null); }}
                           placeholder="https://api.9router.com/v1"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-2 text-xs text-black font-mono focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        <label className="block text-[11px] font-semibold text-black mb-1">
                           API Key Bên Thứ Ba:
                         </label>
                         <div className="relative">
@@ -2483,12 +2565,12 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                             value={editApiKey}
                             onChange={(e) => { setEditApiKey(e.target.value); setTestResult(null); }}
                             placeholder="Dán API Key của 9router hoặc bên thứ ba..."
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 pr-16 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-2 pr-16 text-xs text-black font-mono focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                           />
                           <button
                             type="button"
                             onClick={() => setShowApiKey(!showApiKey)}
-                            className="absolute right-2 top-2 text-[10px] text-slate-400 hover:text-white"
+                            className="absolute right-2 top-2 text-[10px] text-black/50 hover:text-black"
                           >
                             {showApiKey ? "Ẩn" : "Hiện"}
                           </button>
@@ -2498,15 +2580,15 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                   )}
 
                   {editProvider === "gemini" && (
-                    <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+                    <div className="p-3.5 bg-white border border-black/8 rounded-lg space-y-2 shadow-2xs">
                       <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-slate-300">
+                        <label className="text-[11px] font-semibold text-black">
                           Google AI Studio API Key (Để trống nếu dùng key hiện tại trong cấu hình):
                         </label>
                         <button
                           type="button"
                           onClick={() => setShowApiKey(!showApiKey)}
-                          className="text-[10px] text-slate-400 hover:text-white cursor-pointer"
+                          className="text-[10px] text-black/50 hover:text-black cursor-pointer"
                         >
                           {showApiKey ? "Ẩn bớt" : "Hiện mã key"}
                         </button>
@@ -2516,7 +2598,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                         value={editApiKey}
                         onChange={(e) => { setEditApiKey(e.target.value); setTestResult(null); }}
                         placeholder="Dán Gemini API Key mới nếu muốn thay đổi..."
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-teal-500"
+                        className="w-full bg-[#F6F5F4] border border-black/10 rounded-lg p-2 text-xs text-black font-mono focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                       />
                     </div>
                   )}
@@ -2524,23 +2606,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
                 {/* Test Result Banner */}
                 {testResult && (
-                  <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in ${
+                  <div className={`p-3.5 rounded-lg border text-xs flex items-start gap-2.5 animate-in fade-in ${
                     testResult.success
-                      ? "bg-emerald-950/60 text-emerald-300 border-emerald-800"
-                      : "bg-red-950/60 text-red-300 border-red-800"
+                      ? "bg-[#D0F4D8] text-[#1AAE39] border-[#1AAE39]/30"
+                      : "bg-[#FFE4E6] text-[#F64932] border-[#F64932]/30"
                   }`}>
                     {testResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-[#1AAE39] shrink-0 mt-0.5" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 text-[#F64932] shrink-0 mt-0.5" />
                     )}
                     <div className="space-y-0.5">
-                      <p className="font-bold">
+                      <p className="font-semibold">
                         {testResult.success 
                           ? `Kết nối thành công tới ${editChatModel} (Độ trễ: ${testResult.latencyMs}ms)`
                           : `Kết nối thất bại (${testResult.latencyMs}ms)`}
                       </p>
-                      <p className="text-[11px] text-slate-300">
+                      <p className="text-[11px] text-black/70">
                         {testResult.success ? `Phản hồi mẫu: "${testResult.reply}"` : testResult.error}
                       </p>
                     </div>
@@ -2548,12 +2630,12 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 )}
 
                 {/* Action Buttons: Ping Test & Apply */}
-                <div className="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-black/8">
                   <button
                     type="button"
                     onClick={handleTestModelConnection}
                     disabled={testingModel}
-                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs rounded-xl flex items-center gap-2 border border-slate-700 transition disabled:opacity-50 cursor-pointer"
+                    className="px-4 py-2 bg-white hover:bg-black/5 text-[#0075DE] font-medium text-xs rounded-lg flex items-center gap-2 border border-black/10 transition disabled:opacity-50 cursor-pointer shadow-2xs"
                   >
                     {testingModel ? (
                       <>
@@ -2562,7 +2644,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       </>
                     ) : (
                       <>
-                        <Activity className="w-4 h-4 text-teal-400" />
+                        <Activity className="w-4 h-4 text-[#0075DE]" />
                         <span>Kiểm Tra Kết Nối (Ping Test)</span>
                       </>
                     )}
@@ -2571,7 +2653,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                   <button
                     type="submit"
                     disabled={savingModel}
-                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-lg shadow-teal-950"
+                    className="px-5 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white font-medium text-xs rounded-lg flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-2xs"
                   >
                     {savingModel ? (
                       <>
@@ -2595,38 +2677,38 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* TAB 4: KNOWLEDGE BASE & CRAWLER                              */}
         {/* ============================================================= */}
         {activeTab === "knowledge" && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full bg-[#F6F5F4]/30">
             {/* Sub-tab Switcher: Crawl URL vs Upload File */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b border-black/8">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setKnowledgeSubTab("crawl")}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  className={`px-4 py-2 rounded-lg text-xs font-medium transition flex items-center gap-2 cursor-pointer ${
                     knowledgeSubTab === "crawl"
-                      ? "bg-teal-600 text-white shadow-md shadow-teal-950"
-                      : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                      ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                      : "bg-[#F6F5F4] text-black/60 hover:bg-black/5 hover:text-black border border-black/10"
                   }`}
                 >
-                  <Globe className="w-4 h-4" />
+                  <Globe className="w-4 h-4 text-[#0075DE]" />
                   <span>Trích Xuất Y Văn Từ URL</span>
                 </button>
 
                 <button
                   onClick={() => setKnowledgeSubTab("upload")}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                  className={`px-4 py-2 rounded-lg text-xs font-medium transition flex items-center gap-2 cursor-pointer ${
                     knowledgeSubTab === "upload"
-                      ? "bg-teal-600 text-white shadow-md shadow-teal-950"
-                      : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                      ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                      : "bg-[#F6F5F4] text-black/60 hover:bg-black/5 hover:text-black border border-black/10"
                   }`}
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-4 h-4 text-[#1AAE39]" />
                   <span>Nạp Tài Liệu Chuyên Môn</span>
                 </button>
               </div>
 
               <button
                 onClick={loadDocs}
-                className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
+                className="px-3 py-1.5 bg-white border border-black/10 hover:bg-black/5 text-black text-xs font-medium rounded-lg flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${docsLoading ? "animate-spin" : ""}`} />
                 <span>Làm mới danh mục</span>
@@ -2635,12 +2717,12 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
             {/* Input Action Card */}
             {knowledgeSubTab === "crawl" ? (
-              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
+              <div className="p-5 bg-white border border-black/8 rounded-xl space-y-3 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#0075DE] uppercase tracking-wider">
                   <Globe className="w-4 h-4" />
                   <span>Thu Thập Chuyên Luận Y Khoa Trực Tuyến</span>
                 </div>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-black/60">
                   Hệ thống tự động trích xuất nội dung bài viết, bóc tách thẻ HTML thừa, chia nhỏ văn bản và đồng bộ vector trực tiếp lên Qdrant Cloud.
                 </p>
 
@@ -2650,27 +2732,27 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                     value={crawlUrl}
                     onChange={(e) => setCrawlUrl(e.target.value)}
                     placeholder="Dán đường dẫn bài viết y khoa (ví dụ: https://vinmec.com/... hay NIH...)"
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500 font-sans"
+                    className="flex-1 bg-[#F6F5F4] border border-black/10 rounded-lg px-3.5 py-2 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE] font-sans"
                   />
                   <div className="flex gap-2 shrink-0">
                     <button
                       type="button"
                       onClick={handleInspectUrl}
                       disabled={inspectingUrl || !crawlUrl.trim()}
-                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer border border-slate-700 shrink-0"
+                      className="px-3.5 py-2 bg-white hover:bg-black/5 text-black font-medium text-xs rounded-lg flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer border border-black/10 shrink-0 shadow-2xs"
                       title="Kiểm tra sơ bộ nội dung bài viết trước khi cào"
                     >
                       {inspectingUrl ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
+                        <Loader2 className="w-4 h-4 animate-spin text-[#0075DE]" />
                       ) : (
-                        <Eye className="w-4 h-4 text-teal-400" />
+                        <Eye className="w-4 h-4 text-[#0075DE]" />
                       )}
                       <span>Kiểm tra link</span>
                     </button>
                     <button
                       type="submit"
                       disabled={crawling || !crawlUrl.trim()}
-                      className="px-5 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0 shadow-lg shadow-teal-950"
+                      className="px-5 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white font-medium text-xs rounded-lg flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shrink-0 shadow-2xs"
                     >
                       {crawling ? (
                         <>
@@ -2688,39 +2770,39 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </form>
 
                 {inspectionResult && (
-                  <div className="p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 text-xs space-y-2 animate-in fade-in duration-150">
+                  <div className="p-3.5 bg-[#F6F5F4] rounded-lg border border-black/8 text-xs space-y-2 animate-in fade-in duration-150">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-teal-300 font-bold">
-                        <CheckCircle className="w-4 h-4 text-teal-400" />
+                      <div className="flex items-center gap-2 text-black font-semibold">
+                        <CheckCircle className="w-4 h-4 text-[#1AAE39]" />
                         <span>Kết Quả Kiểm Tra Sơ Bộ: {inspectionResult.title || "Trang web y tế"}</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        inspectionResult.quality === "good" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-amber-950 text-amber-300 border border-amber-800"
+                        inspectionResult.quality === "good" ? "bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30" : "bg-[#FEF3C7] text-[#D97706] border border-[#FFB110]/30"
                       }`}>
                         Chất lượng: {inspectionResult.quality}
                       </span>
                     </div>
-                    <div className="text-slate-400 text-[11px] flex gap-4">
+                    <div className="text-black/60 text-[11px] flex gap-4">
                       <span>Độ dài văn bản: <strong>{inspectionResult.textLength}</strong> ký tự</span>
                       <span>Số đoạn văn: <strong>{inspectionResult.paragraphCount}</strong></span>
                       <span>Hình ảnh: <strong>{inspectionResult.imageCount}</strong></span>
                     </div>
                     {inspectionResult.previewSnippet && (
-                      <p className="text-slate-400 text-[11px] line-clamp-2 italic bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
+                      <p className="text-black/70 text-[11px] line-clamp-2 italic bg-white p-2 rounded-md border border-black/8">
                         "{inspectionResult.previewSnippet}"
                       </p>
                     )}
                     {inspectionResult.shouldWarn && showWarningModal && inspectionResult.warningMessage && (
-                      <div className="p-3 bg-amber-950/70 border border-amber-800 rounded-xl text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="p-3 bg-[#FEF3C7] border border-[#FFB110]/30 rounded-lg text-[#D97706] text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <AlertTriangle className="w-4 h-4 text-[#D97706] shrink-0" />
                           <span>{inspectionResult.warningMessage}</span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
                             onClick={() => setShowWarningModal(false)}
-                            className="text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded cursor-pointer"
+                            className="text-[11px] text-black/60 hover:text-black px-2 py-1 rounded cursor-pointer"
                           >
                             Đóng cảnh báo
                           </button>
@@ -2728,7 +2810,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                             type="button"
                             onClick={() => handleCrawl()}
                             disabled={crawling}
-                            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+                            className="px-3 py-1 bg-[#D97706] hover:bg-[#B45309] text-white font-medium text-xs rounded-lg transition cursor-pointer"
                           >
                             Vẫn Thu Thập Nguồn Này
                           </button>
@@ -2739,63 +2821,66 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 )}
               </div>
             ) : (
-              <div className="p-5 bg-slate-900 border border-slate-800 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-teal-400 uppercase tracking-wider">
+              <div className="p-5 bg-white border border-black/8 rounded-xl space-y-3 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#1AAE39] uppercase tracking-wider">
                   <Upload className="w-4 h-4" />
                   <span>Nạp Chuyên Luận Y Khoa Cục Bộ</span>
                 </div>
-                <p className="text-xs text-slate-400">
-                  Hỗ trợ định dạng văn bản thô (.txt, .md) hoặc tài liệu PDF chuyên khảo.
+                <p className="text-xs text-black/60">
+                  Tải lên tệp tài liệu y khoa (.txt, .md, .pdf). Hệ thống tự động phân tích và tạo embedding vector đưa vào cơ sở dữ liệu tri thức lâm sàng.
                 </p>
 
-                <form onSubmit={handleUpload} className="flex items-center gap-3">
-                  <input
-                    id="portal-upload-input"
-                    type="file"
-                    accept=".txt,.md,.pdf"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                    className="text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-teal-400 hover:file:bg-slate-700 cursor-pointer"
-                  />
-                  <button
-                    type="submit"
-                    disabled={uploadingFile || !selectedFile}
-                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-lg shadow-teal-950"
-                  >
-                    {uploadingFile ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Đang xử lý tệp...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="w-4 h-4" />
-                        <span>Nạp & Đồng Bộ Vector</span>
-                      </>
-                    )}
-                  </button>
+                <form onSubmit={handleFileUpload} className="space-y-3">
+                  <div className="border-2 border-dashed border-black/10 rounded-xl p-6 text-center hover:border-[#0075DE]/40 transition bg-[#F6F5F4]/40">
+                    <input
+                      id="portal-upload-input"
+                      type="file"
+                      accept=".txt,.md,.pdf"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                    />
+                    <label htmlFor="portal-upload-input" className="cursor-pointer block">
+                      <FileText className="w-8 h-8 text-black/40 mx-auto mb-2" />
+                      <span className="text-xs font-medium text-black block">
+                        {selectedFile ? selectedFile.name : "Nhấn để chọn tệp tài liệu (.txt, .md, .pdf)"}
+                      </span>
+                      <span className="text-[11px] text-black/40 mt-1 block">
+                        Dung lượng tối đa khuyến nghị: 15MB
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={uploadingFile || !selectedFile}
+                      className="px-5 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white font-medium text-xs rounded-lg flex items-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                    >
+                      {uploadingFile ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Đang nạp và phân đoạn tài liệu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          <span>Nạp Tài Liệu Ngay</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </form>
               </div>
             )}
 
-            {/* Hộp Thông Tin Lưu Trữ 2 Tầng */}
-            <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex items-start gap-3 text-xs text-slate-400">
-              <Database className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <span className="font-bold text-slate-200">Cơ chế Lưu trữ & Tham chiếu 2 Tầng (Raw & Normalized Markdown):</span>
-                <p className="text-[11px] leading-relaxed">
-                  Tầng 1 (Raw) lưu trữ tệp hoặc HTML nguyên gốc tại <code className="text-teal-400 font-mono">storage/documents/raw/</code>. Tầng 2 (Normalized) lưu trữ tệp Markdown đồng nhất phục vụ phân đoạn vector RAG. Hai tệp liên kết chặt chẽ qua ID: khi xóa tài liệu gốc, hệ thống tự động xóa cả bản chuẩn hóa và giải phóng vector trên Qdrant Cloud.
-                </p>
-              </div>
-            </div>
-
-            {/* Document List Table */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            {/* Document List Table (Notion Database Layout) */}
+            <div className="bg-white border border-black/8 rounded-xl overflow-hidden shadow-2xs">
+              <div className="p-4 border-b border-black/8 flex items-center justify-between bg-white">
                 <div>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-black uppercase tracking-wider">
                     Danh Mục Tài Liệu Đã Nạp ({documents.length})
                   </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className="text-[11px] text-black/50 mt-0.5">
                     Đồng bộ 2 chiều giữa Cơ sở dữ liệu SQLite và Qdrant Vector Cloud.
                   </p>
                 </div>
@@ -2803,27 +2888,27 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950/60 text-slate-400 border-b border-slate-800 uppercase text-[10px] tracking-wider">
+                  <thead className="bg-[#F6F5F4] text-black/55 uppercase font-semibold text-[11px] tracking-[0.04em] border-b border-black/8">
                     <tr>
-                      <th className="px-4 py-3">Tên Tài Liệu</th>
-                      <th className="px-4 py-3">Nguồn</th>
-                      <th className="px-4 py-3">Số Lượng Chunks</th>
-                      <th className="px-4 py-3">Dung Lượng</th>
-                      <th className="px-4 py-3">Ngày Cập Nhật</th>
-                      <th className="px-4 py-3 text-right">Thao Tác</th>
+                      <th className="px-4 py-2.5">Tên Tài Liệu</th>
+                      <th className="px-4 py-2.5">Nguồn</th>
+                      <th className="px-4 py-2.5">Số Lượng Chunks</th>
+                      <th className="px-4 py-2.5">Dung Lượng</th>
+                      <th className="px-4 py-2.5">Ngày Cập Nhật</th>
+                      <th className="px-4 py-2.5 text-right">Thao Tác</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800">
+                  <tbody className="divide-y divide-black/6 bg-white">
                     {docsLoading ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-teal-500 mb-2" />
+                        <td colSpan={6} className="px-4 py-8 text-center text-black/40">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#0075DE] mb-2" />
                           <span>Đang nạp danh mục tài liệu...</span>
                         </td>
                       </tr>
                     ) : documents.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                        <td colSpan={6} className="px-4 py-8 text-center text-black/40">
                           Chưa có tài liệu nào trong hệ thống. Hãy nạp file hoặc cào từ URL phía trên.
                         </td>
                       </tr>
@@ -2831,58 +2916,58 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       documents.map((doc) => {
                         const cleanTitle = cleanDocDisplayTitle(doc.title, doc.fileName);
                         return (
-                          <tr key={doc.id} className="hover:bg-slate-800/40 transition">
+                          <tr key={doc.id} className="hover:bg-[#F6F5F4]/60 transition">
                             <td className="px-4 py-3">
                               <div 
                                 onClick={() => handleOpenDocViewer(doc.id)}
-                                className="font-semibold text-white flex items-center gap-2 cursor-pointer hover:text-teal-300 transition"
+                                className="font-semibold text-black flex items-center gap-2 cursor-pointer hover:text-[#0075DE] transition"
                                 title="Nhấn để mở xem toàn văn định dạng đẹp"
                               >
-                                <FileText className="w-4 h-4 text-teal-400 shrink-0" />
+                                <FileText className="w-4 h-4 text-[#0075DE] shrink-0" />
                                 <span className="truncate max-w-sm" title={cleanTitle}>
                                   {cleanTitle}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-sm font-mono">
+                              <div className="text-[10px] text-black/50 mt-0.5 truncate max-w-sm font-mono">
                                 Tệp: {doc.fileName}
                               </div>
                             </td>
                             <td className="px-4 py-3">
                               {doc.sourceType === "crawled" || doc.sourceUrl ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-800">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-[#E6F3FE] text-[#0075DE] border border-[#0075DE]/20">
                                   <Globe className="w-3 h-3" />
                                   <span>Nguồn Web</span>
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-[#EADBFA] text-[#6B21A8] border border-[#6B21A8]/20">
                                   <Upload className="w-3 h-3" />
                                   <span>Tệp Cục Bộ</span>
                                 </span>
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-950 text-teal-300 border border-teal-800">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#D0F4D8] text-[#1AAE39] border border-[#1AAE39]/30 font-mono">
                                 {doc.chunkCount} đoạn y văn
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-slate-400 font-mono text-[11px]">
+                            <td className="px-4 py-3 text-black/60 font-mono text-[11px]">
                               {(doc.fileSizeBytes / 1024).toFixed(1)} KB
                             </td>
-                            <td className="px-4 py-3 text-slate-400 text-[11px]">
-                              {new Date(doc.uploadedAtUtc).toLocaleDateString()}
+                            <td className="px-4 py-3 text-black/60 text-[11px]">
+                              {new Date(doc.uploadedAtUtc).toLocaleDateString("vi-VN")}
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 <button
                                   onClick={() => handleOpenDocViewer(doc.id)}
-                                  className="p-1.5 text-slate-400 hover:text-teal-300 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                                  className="p-1.5 text-black/40 hover:text-[#0075DE] rounded-md hover:bg-black/5 transition cursor-pointer"
                                   title="Xem toàn văn tài liệu định dạng đẹp"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteDoc(doc.id, cleanTitle)}
-                                  className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                                  className="p-1.5 text-black/40 hover:text-[#F64932] rounded-md hover:bg-rose-50 transition cursor-pointer"
                                   title="Xóa tài liệu và giải phóng vector trên Qdrant"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -2904,26 +2989,25 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* DOCUMENT VIEWER MODAL / DRAWER (XEM VĂN BẢN ĐẸP)            */}
         {/* ============================================================= */}
         {(viewingDoc || docDetailLoading) && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden text-slate-100">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="bg-white border border-black/10 rounded-xl shadow-notion-float w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden text-black">
               {/* Header */}
-              <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-950/80">
+              <div className="px-6 py-4 border-b border-black/8 flex flex-wrap items-center justify-between gap-3 bg-white">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30 shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-[#E6F3FE] text-[#0075DE] flex items-center justify-center border border-[#0075DE]/20 shrink-0">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2 truncate">
+                    <h3 className="text-sm font-semibold text-black flex items-center gap-2 truncate">
                       <span>{viewingDoc ? cleanDocDisplayTitle(viewingDoc.title, viewingDoc.fileName) : "Đang tải tài liệu..."}</span>
                     </h3>
                     {viewingDoc && (
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                        <span className="truncate max-w-xs text-slate-300 font-mono">Tệp: {viewingDoc.fileName}</span>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-black/50 mt-0.5">
+                        <span className="truncate max-w-xs text-black/70 font-mono">Tệp: {viewingDoc.fileName}</span>
                         <span>•</span>
-                        <span className="text-teal-400 font-semibold">{viewingDoc.chunkCount} đoạn y văn</span>
+                        <span className="text-[#0075DE] font-semibold">{viewingDoc.chunkCount} đoạn y văn</span>
                         <span>•</span>
                         <span>{(viewingDoc.fileSizeBytes / 1024).toFixed(1)} KB</span>
-                        {/* Kiểm tra link nguồn cào web nếu có */}
                         {(() => {
                           const urlMatch = viewingDoc.content.match(/NGUỒN TRÍCH DẪN GỐC:\s*(https?:\/\/[^\s\n\r]+)/i);
                           if (urlMatch && urlMatch[1]) {
@@ -2934,7 +3018,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                                   href={urlMatch[1]}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-teal-400 hover:text-teal-300 hover:underline flex items-center gap-1 font-medium"
+                                  className="text-[#0075DE] hover:text-[#0062BD] hover:underline flex items-center gap-1 font-medium"
                                   title={urlMatch[1]}
                                 >
                                   <ExternalLink className="w-3 h-3" />
@@ -2954,27 +3038,27 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                   {viewingDoc && (
                     <>
                       {/* Chuyển đổi chế độ xem đẹp / thô */}
-                      <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
+                      <div className="flex bg-[#F6F5F4] border border-black/8 rounded-lg p-1">
                         <button
                           type="button"
                           onClick={() => setDocViewMode("formatted")}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                             docViewMode === "formatted"
-                              ? "bg-teal-600 text-white shadow-sm"
-                              : "text-slate-400 hover:text-white"
+                              ? "bg-white text-black shadow-2xs"
+                              : "text-black/60 hover:text-black"
                           }`}
                           title="Định dạng bài viết đẹp với Markdown & typography"
                         >
-                          <Sparkles className="w-3.5 h-3.5" />
+                          <Sparkles className="w-3.5 h-3.5 text-[#0075DE]" />
                           <span className="hidden sm:inline">Định dạng đẹp</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setDocViewMode("raw")}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                             docViewMode === "raw"
-                              ? "bg-teal-600 text-white shadow-sm"
-                              : "text-slate-400 hover:text-white"
+                              ? "bg-white text-black shadow-2xs"
+                              : "text-black/60 hover:text-black"
                           }`}
                           title="Xem văn bản thô nguyên bản"
                         >
@@ -2987,13 +3071,13 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       <button
                         type="button"
                         onClick={handleCopyDocContent}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition cursor-pointer"
+                        className="px-3 py-1.5 bg-[#F6F5F4] hover:bg-black/5 text-black rounded-lg text-xs font-medium flex items-center gap-1.5 border border-black/10 transition cursor-pointer shadow-2xs"
                         title="Sao chép toàn bộ văn bản thô"
                       >
                         {copiedDocContent ? (
                           <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-emerald-400">Đã chép</span>
+                            <Check className="w-3.5 h-3.5 text-[#1AAE39]" />
+                            <span className="text-[#1AAE39]">Đã chép</span>
                           </>
                         ) : (
                           <>
@@ -3007,7 +3091,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       <button
                         type="button"
                         onClick={handleDownloadDoc}
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition cursor-pointer"
+                        className="p-2 bg-[#F6F5F4] hover:bg-black/5 text-black rounded-lg border border-black/10 transition cursor-pointer shadow-2xs"
                         title="Tải tệp .txt về máy"
                       >
                         <Download className="w-4 h-4" />
@@ -3016,7 +3100,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                   )}
                   <button
                     onClick={() => setViewingDoc(null)}
-                    className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition cursor-pointer"
+                    className="p-1.5 text-black/40 hover:text-black rounded-lg hover:bg-black/5 transition cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -3025,19 +3109,19 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
               {/* Sub-header: Tìm kiếm từ khóa trong tài liệu */}
               {viewingDoc && (
-                <div className="px-6 py-2.5 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between gap-4">
+                <div className="px-6 py-2.5 bg-[#F6F5F4] border-b border-black/8 flex items-center justify-between gap-4">
                   <div className="relative flex-1 max-w-md">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-black/40" />
                     <input
                       type="text"
                       value={docSearchQuery}
                       onChange={(e) => setDocSearchQuery(e.target.value)}
                       placeholder="Tìm từ khóa trong văn bản..."
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                      className="w-full bg-white border border-black/10 rounded-lg pl-8 pr-3 py-1 text-xs text-black placeholder-black/40 focus:outline-none focus:ring-2 focus:ring-[#0075DE]"
                     />
                   </div>
                   {docSearchQuery.trim() && (
-                    <span className="text-[11px] text-teal-400 font-mono">
+                    <span className="text-[11px] text-[#0075DE] font-mono">
                       {(() => {
                         const count = (viewingDoc.content.match(new RegExp(docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')) || []).length;
                         return `Tìm thấy ${count} lần xuất hiện`;
@@ -3048,28 +3132,28 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
               )}
 
               {/* Content Body */}
-              <div className="flex-1 overflow-y-auto p-6 sm:p-8 bg-slate-900/60">
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8 bg-white">
                 {docDetailLoading ? (
-                  <div className="py-20 flex flex-col items-center justify-center text-slate-500 text-xs gap-3">
-                    <Loader2 className="w-7 h-7 animate-spin text-teal-400" />
+                  <div className="py-20 flex flex-col items-center justify-center text-black/40 text-xs gap-3">
+                    <Loader2 className="w-7 h-7 animate-spin text-[#0075DE]" />
                     <span>Đang trích xuất toàn văn chuyên luận y khoa...</span>
                   </div>
                 ) : viewingDoc ? (
                   docViewMode === "formatted" ? (
                     <div
-                      className="prose prose-invert prose-sm sm:prose-base max-w-none leading-relaxed text-slate-200 
-                        [&_h1]:text-teal-300 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:border-b [&_h1]:border-slate-800 [&_h1]:pb-2
-                        [&_h2]:text-teal-400 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-6 [&_h2]:mb-3
-                        [&_h3]:text-teal-200 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2
-                        [&_blockquote]:bg-slate-950/80 [&_blockquote]:border-l-4 [&_blockquote]:border-teal-500 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:rounded-r-xl [&_blockquote]:text-slate-300
+                      className="prose prose-sm sm:prose-base max-w-none leading-relaxed text-black/85 
+                        [&_h1]:text-black [&_h1]:text-lg [&_h1]:font-bold [&_h1]:border-b [&_h1]:border-black/8 [&_h1]:pb-2
+                        [&_h2]:text-black [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-6 [&_h2]:mb-3
+                        [&_h3]:text-black/80 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-2
+                        [&_blockquote]:bg-[#F6F5F4] [&_blockquote]:border-l-4 [&_blockquote]:border-[#0075DE] [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:rounded-r-lg [&_blockquote]:text-black/80
                         [&_ul]:my-2 [&_li]:my-1
-                        [&_table]:w-full [&_table]:border-collapse [&_th]:bg-slate-950 [&_th]:p-2 [&_th]:border [&_th]:border-slate-800 [&_td]:p-2 [&_td]:border [&_td]:border-slate-800"
+                        [&_table]:w-full [&_table]:border-collapse [&_th]:bg-[#F6F5F4] [&_th]:p-2 [&_th]:border [&_th]:border-black/10 [&_td]:p-2 [&_td]:border [&_td]:border-black/10"
                       dangerouslySetInnerHTML={{
                         __html: marked.parse(
                           docSearchQuery.trim()
                             ? viewingDoc.content.replace(
                                 new RegExp(`(${docSearchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'),
-                                '<mark class="bg-amber-300 text-slate-950 font-bold px-1 rounded">$1</mark>'
+                                '<mark class="bg-[#FEF3C7] text-black font-semibold px-1 rounded border border-[#FFB110]/40">$1</mark>'
                               )
                             : viewingDoc.content || "*Tài liệu không có nội dung văn bản.*",
                           { breaks: true }
@@ -3077,7 +3161,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                       }}
                     />
                   ) : (
-                    <pre className="whitespace-pre-wrap font-mono text-xs text-slate-300 bg-slate-950 p-4 rounded-2xl border border-slate-800 overflow-x-auto leading-relaxed">
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-black/80 bg-[#F6F5F4] p-4 rounded-xl border border-black/8 overflow-x-auto leading-relaxed">
                       {viewingDoc.content}
                     </pre>
                   )
@@ -3086,15 +3170,15 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
               {/* Footer */}
               {viewingDoc && (
-                <div className="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="px-6 py-3 border-t border-black/8 bg-white flex items-center justify-between text-[11px] text-black/60">
                   <div className="flex items-center gap-2">
-                    <span>Mã ID: <code className="text-teal-400 font-mono">{viewingDoc.id}</code></span>
+                    <span>Mã ID: <code className="text-[#0075DE] font-mono">{viewingDoc.id}</code></span>
                     <span>•</span>
                     <span>{viewingDoc.content?.length.toLocaleString() || 0} ký tự</span>
                   </div>
                   <button
                     onClick={() => setViewingDoc(null)}
-                    className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
+                    className="px-4 py-1.5 bg-[#F6F5F4] hover:bg-black/5 text-black rounded-lg text-xs font-semibold border border-black/10 transition cursor-pointer"
                   >
                     Đóng văn bản
                   </button>
@@ -3106,36 +3190,36 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
         {/* Modal Hướng dẫn Firestore Security Rules */}
         {showRulesModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl space-y-4 p-5">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2 text-teal-400 font-bold text-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+            <div className="bg-white border border-black/10 rounded-xl w-full max-w-xl overflow-hidden shadow-notion-float space-y-4 p-5 text-black">
+              <div className="flex items-center justify-between pb-3 border-b border-black/8">
+                <div className="flex items-center gap-2 text-[#0075DE] font-semibold text-sm">
                   <ShieldCheck className="w-5 h-5" />
                   <span>Cấu hình Firestore Security Rules để hiển thị User</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowRulesModal(false)}
-                  className="text-slate-400 hover:text-white cursor-pointer"
+                  className="text-black/40 hover:text-black cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="text-xs text-slate-300 space-y-2">
+              <div className="text-xs text-black/70 space-y-2 leading-relaxed">
                 <p>
                   Nếu danh sách người dùng hiển thị 0 user hoặc báo lỗi <code>permission-denied</code>, nghĩa là Firestore Security Rules của dự án Firebase đang chặn quyền đọc bộ sưu tập <code>/users</code>.
                 </p>
-                <p className="font-semibold text-teal-300">
+                <p className="font-semibold text-black">
                   Các bước mở quyền trên Firebase Console:
                 </p>
-                <ol className="list-decimal pl-5 space-y-1 text-slate-400 text-[11px]">
-                  <li>Truy cập <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-teal-400 underline">Firebase Console</a> &gt; <strong>Firestore Database</strong> &gt; Tab <strong>Rules</strong>.</li>
+                <ol className="list-decimal pl-5 space-y-1 text-black/60 text-[11px]">
+                  <li>Truy cập <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0075DE] underline">Firebase Console</a> &gt; <strong>Firestore Database</strong> &gt; Tab <strong>Rules</strong>.</li>
                   <li>Dán đoạn mã quy tắc dưới đây và nhấn <strong>Publish</strong>:</li>
                 </ol>
               </div>
 
-              <div className="relative bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-[11px] text-teal-300 overflow-x-auto">
+              <div className="relative bg-[#F6F5F4] p-3 rounded-lg border border-black/8 font-mono text-[11px] text-black/80 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => {
@@ -3144,12 +3228,22 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                     setCopiedRules(true);
                     setTimeout(() => setCopiedRules(false), 2000);
                   }}
-                  className="absolute right-2.5 top-2.5 px-2.5 py-1 bg-teal-900/60 hover:bg-teal-800 text-teal-300 rounded text-[10px] font-sans font-bold flex items-center gap-1 border border-teal-700 cursor-pointer"
+                  className="absolute right-2.5 top-2.5 px-2.5 py-1 bg-white hover:bg-black/5 text-[#0075DE] rounded text-[10px] font-sans font-medium flex items-center gap-1 border border-black/10 cursor-pointer shadow-2xs"
                 >
-                  {copiedRules ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedRules ? "Đã chép!" : "Sao chép"}</span>
+                  {copiedRules ? (
+                    <>
+                      <Check className="w-3 h-3 text-[#1AAE39]" />
+                      <span className="text-[#1AAE39]">Đã sao chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Sao chép quy tắc</span>
+                    </>
+                  )}
                 </button>
-                <pre>{`rules_version = '2';
+                <pre className="text-black/80 text-[10.5px] leading-relaxed">
+{`rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId} {
@@ -3165,19 +3259,17 @@ service cloud.firestore {
       allow read, write: if true;
     }
   }
-}`}</pre>
+}`}
+                </pre>
               </div>
 
               <div className="flex justify-end pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowRulesModal(false);
-                    loadUsers();
-                  }}
-                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl cursor-pointer"
+                  onClick={() => setShowRulesModal(false)}
+                  className="px-4 py-1.5 bg-[#0075DE] hover:bg-[#0062BD] text-white rounded-lg text-xs font-medium cursor-pointer shadow-2xs"
                 >
-                  Đã cấu hình & Thử tải lại
+                  Đã hiểu
                 </button>
               </div>
             </div>

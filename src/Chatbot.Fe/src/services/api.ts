@@ -22,11 +22,10 @@ export interface ChatMetadata {
 
 export interface AdminReviewInfo {
   status: 'pending' | 'in_review' | 'resolved';
-  notes?: string;
+  adminNotes?: string;
   correctedResponse?: string;
-  adminEmail?: string;
   evaluatedAt?: any;
-  incidentId?: string;
+  adminName?: string;
 }
 
 export interface ChatMessage {

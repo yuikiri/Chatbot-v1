@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
 import { CitationModal } from "./components/CitationModal";
@@ -33,7 +33,6 @@ export function App() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const isStreamingRef = useRef(false);
   const [currentView, setCurrentView] = useState<"chat" | "admin">("chat");
 
   // 3 Chế độ co giãn (Nghiêm ngặt, Cân bằng, Mở rộng)
@@ -80,29 +79,30 @@ export function App() {
     return () => unsubConv();
   }, [currentUser]);
 
-  // Lắng nghe tin nhắn cuộc trò chuyện theo thời gian thực (để nhận phản hồi / đính chính của Bác sĩ ngay tức khắc)
+  // Lắng nghe tin nhắn theo thời gian thực của cuộc trò chuyện đang chọn (đồng bộ nhận xét bác sĩ tức thì)
   useEffect(() => {
-    if (!currentUser || !activeConvId) return;
-
-    const unsub = subscribeConversationMessages(currentUser.uid, activeConvId, (msgs) => {
-      // Nếu đang streaming dở tin nhắn hiện tại, không ghi đè trạng thái
-      if (isStreamingRef.current) return;
-
-      setMessages(msgs.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        safetyLevel: m.safetyLevel,
-        citations: m.citations,
-        isRefusal: m.isRefusal,
-        mode: m.mode || "strict",
-        adminReview: m.adminReview,
-        timestamp: m.timestamp
-      })));
+    if (!currentUser || !activeConvId) {
+      return;
+    }
+    const unsubMessages = subscribeConversationMessages(currentUser.uid, activeConvId, (msgs) => {
+      // Chỉ đồng bộ khi không đang stream để giữ trải nghiệm gõ chữ mượt mà
+      if (!isStreaming) {
+        setMessages(msgs.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          safetyLevel: m.safetyLevel,
+          citations: m.citations,
+          isRefusal: m.isRefusal,
+          mode: m.mode || "strict",
+          timestamp: m.timestamp,
+          adminReview: m.adminReview
+        })));
+      }
     });
 
-    return () => unsub();
-  }, [currentUser, activeConvId]);
+    return () => unsubMessages();
+  }, [currentUser, activeConvId, isStreaming]);
 
   // Xử lý đăng xuất sạch sẽ ngay lập tức (không cần F5)
   const handleLogout = async () => {
@@ -127,8 +127,8 @@ export function App() {
         citations: m.citations,
         isRefusal: m.isRefusal,
         mode: m.mode || "strict",
-        adminReview: m.adminReview,
-        timestamp: m.timestamp
+        timestamp: m.timestamp,
+        adminReview: m.adminReview
       })));
     } catch (e) {
       console.error("Lỗi tải tin nhắn:", e);
@@ -185,7 +185,6 @@ export function App() {
 
     setMessages((prev) => [...prev, userMessage, initialAssistantMessage]);
     setIsStreaming(true);
-    isStreamingRef.current = true;
 
     let accumulatedContent = "";
     let finalCitations: CitationItem[] = [];
@@ -226,7 +225,6 @@ export function App() {
       },
       async () => {
         setIsStreaming(false);
-        isStreamingRef.current = false;
 
         // Lưu vào Firestore nếu đã đăng nhập
         if (currentUser) {
@@ -239,12 +237,12 @@ export function App() {
               await saveConversationSession(currentUser.uid, convId, title);
             }
 
-            await saveChatMessage(currentUser.uid, convId, {
+            const userDocId = await saveChatMessage(currentUser.uid, convId, {
               role: "user",
               content: text
             });
 
-            const botMsgId = await saveChatMessage(currentUser.uid, convId, {
+            const botDocId = await saveChatMessage(currentUser.uid, convId, {
               role: "assistant",
               content: accumulatedContent,
               safetyLevel: finalSafetyLevel,
@@ -253,8 +251,13 @@ export function App() {
               mode: finalMode
             });
 
-            if (botMsgId) {
-              setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, id: botMsgId } : m));
+            // Gán đúng docId vào tin nhắn trong state để nút báo cáo gửi đúng messageId
+            if (botDocId) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, id: botDocId } : (userDocId && m.id === userMsgId ? { ...m, id: userDocId } : m)
+                )
+              );
             }
           } catch (err) {
             console.error("Lỗi lưu Firestore:", err);
@@ -263,8 +266,6 @@ export function App() {
       },
       (err: any) => {
         setIsStreaming(false);
-        isStreamingRef.current = false;
-        const errMsg = err?.message || "Lỗi kết nối máy chủ hoặc timeout mô hình";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
@@ -276,22 +277,19 @@ export function App() {
               : m
           )
         );
-
-        // Tự động ghi nhận Lỗi Hệ Thống (system_detected) vào Incident Hub
-        if (currentUser) {
-          reportIncident({
-            userId: currentUser.uid,
-            userEmail: currentUser.email || undefined,
-            conversationId: activeConvId || "untracked",
-            messageId: assistantMsgId,
-            category: "system_detected",
-            errorType: "model_timeout",
-            userQuery: text,
-            botResponse: "Lỗi kết nối / Máy chủ timeout",
-            errorMessage: errMsg
-          }).catch(e => console.warn("Lỗi tự động ghi nhận sự cố:", e));
-        }
         console.error(err);
+
+        // Tự động ghi nhận sự cố hệ thống
+        reportIncident({
+          category: "system_detected",
+          userId: currentUser?.uid || "anonymous",
+          userEmail: currentUser?.email || undefined,
+          conversationId: activeConvId || "untracked",
+          userQuery: text,
+          errorType: "model_timeout",
+          errorMessage: `Lỗi kết nối / timeout stream: ${err?.message || "Không có phản hồi từ máy chủ"}`,
+          botResponse: "Lỗi kết nối máy chủ"
+        }).catch((e) => console.warn("Lỗi tự động ghi nhận system incident:", e));
       }
     );
   };

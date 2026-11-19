@@ -69,37 +69,38 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const firebaseReady = isFirebaseReady();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200/90 p-6 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-notion-float w-full max-w-sm overflow-hidden border border-black/10 p-6 relative">
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-xl transition cursor-pointer"
+          className="absolute right-4 top-4 text-black/40 hover:text-black hover:bg-black/5 p-1.5 rounded-md transition cursor-pointer"
+          title="Đóng"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-teal-50 text-teal-700 border border-teal-200/60 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-2xs">
-            <ShieldCheck className="w-6 h-6 text-teal-600" />
+        <div className="text-center mb-5">
+          <div className="w-11 h-11 bg-[#F6F5F4] text-[#0075DE] border border-black/8 rounded-xl flex items-center justify-center mx-auto mb-2.5 shadow-2xs">
+            <ShieldCheck className="w-5 h-5 text-[#0075DE]" />
           </div>
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+          <h3 className="text-base font-semibold text-black tracking-[-0.025em]">
             {isRegister ? "Tạo tài khoản LactaMed" : "Đăng nhập LactaMed AI"}
           </h3>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+          <p className="text-xs text-black/55 mt-1 leading-relaxed">
             Đồng bộ và tự động lưu trữ lịch sử tư vấn y khoa trên mọi thiết bị của bạn.
           </p>
         </div>
 
         {/* Tab switch pills */}
-        <div className="flex p-1 bg-slate-100/80 rounded-xl mb-4 border border-slate-200/60">
+        <div className="flex p-1 bg-[#F6F5F4] rounded-lg mb-4 border border-black/8">
           <button
             type="button"
             onClick={() => {
               setIsRegister(false);
               setError(null);
             }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              !isRegister ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+              !isRegister ? "bg-white text-black shadow-2xs" : "text-black/50 hover:text-black font-medium"
             }`}
           >
             Đăng nhập
@@ -110,8 +111,8 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
               setIsRegister(true);
               setError(null);
             }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              isRegister ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+              isRegister ? "bg-white text-black shadow-2xs" : "text-black/50 hover:text-black font-medium"
             }`}
           >
             Đăng ký mới
@@ -119,17 +120,17 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         {is127 && (
-          <div className="mb-4 p-3 bg-blue-50/80 text-blue-900 text-xs rounded-xl border border-blue-200 flex items-start gap-2">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-600" />
+          <div className="mb-4 p-2.5 bg-[#E6F3FE] text-[#097FE8] text-xs rounded-lg border border-[#0075DE]/20 flex items-start gap-2 shadow-2xs">
+            <Info className="w-4 h-4 shrink-0 mt-0.5 text-[#0075DE]" />
             <span>
-              <strong>Mẹo:</strong> Bạn đang truy cập bằng <code>127.0.0.1</code>. Để đăng nhập Google không bị chặn, hãy mở bằng <a href="http://localhost:10000" className="underline font-bold text-blue-700">http://localhost:10000</a>.
+              <strong>Mẹo:</strong> Bạn đang truy cập bằng <code>127.0.0.1</code>. Để đăng nhập Google không bị chặn, hãy mở bằng <a href="http://localhost:10000" className="underline font-semibold text-[#0075DE]">http://localhost:10000</a>.
             </span>
           </div>
         )}
 
         {!firebaseReady && (
-          <div className="mb-4 p-3 bg-amber-50/80 text-amber-900 text-xs rounded-xl border border-amber-200 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+          <div className="mb-4 p-2.5 bg-[#FFFDF5] text-[#78350F] text-xs rounded-lg border border-[#FFB110]/25 flex items-start gap-2 shadow-2xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
             <span>
               <strong>Lưu ý:</strong> Chưa cấu hình Firebase API key trong <code>.env</code>. Bạn vẫn có thể trò chuyện ở chế độ khách vãng lai!
             </span>
@@ -137,7 +138,7 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
         )}
 
         {error && (
-          <div className="mb-4 p-3 bg-rose-50 text-rose-800 text-xs rounded-xl border border-rose-200 leading-relaxed font-medium">
+          <div className="mb-4 p-2.5 bg-[#F64932]/10 text-[#F64932] text-xs rounded-lg border border-[#F64932]/25 leading-relaxed font-medium">
             {error}
           </div>
         )}
@@ -146,7 +147,7 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
         <button
           onClick={handleGoogle}
           disabled={loading || !firebaseReady}
-          className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white border border-slate-300/80 hover:bg-slate-50/80 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs transition disabled:opacity-50 cursor-pointer"
+          className="w-full flex items-center justify-center gap-2.5 py-2 px-4 bg-white border border-black/14 hover:bg-[#F6F5F4] rounded-lg text-xs font-semibold text-black shadow-2xs transition disabled:opacity-50 cursor-pointer"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -157,11 +158,11 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <span>Tiếp tục với Google</span>
         </button>
 
-        <div className="relative my-4">
+        <div className="relative my-3.5">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200"></div>
+            <div className="w-full border-t border-black/10"></div>
           </div>
-          <div className="relative flex justify-center text-xs text-slate-400">
+          <div className="relative flex justify-center text-[11px] text-black/40">
             <span className="bg-white px-2">Hoặc tài khoản email</span>
           </div>
         </div>
@@ -169,24 +170,24 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
         {/* Form Email */}
         <form onSubmit={handleEmailAuth} className="space-y-3">
           <div className="relative">
-            <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <Mail className="w-4 h-4 text-black/35 absolute left-3 top-2.5" />
             <input
               type="email"
               placeholder="Email của bạn"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full pl-10 pr-3.5 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-slate-800"
+              className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-black/14 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0075DE]/20 focus:border-[#0075DE] text-black placeholder-black/35"
               required
             />
           </div>
           <div className="relative">
-            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <Lock className="w-4 h-4 text-black/35 absolute left-3 top-2.5" />
             <input
               type="password"
               placeholder="Mật khẩu (tối thiểu 6 ký tự)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-10 pr-3.5 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-slate-800"
+              className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-black/14 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0075DE]/20 focus:border-[#0075DE] text-black placeholder-black/35"
               required
               minLength={6}
             />
@@ -195,7 +196,7 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <button
             type="submit"
             disabled={loading || !firebaseReady}
-            className="w-full py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-500 hover:to-teal-400 active:scale-[0.98] text-white rounded-xl text-xs font-bold transition disabled:opacity-50 shadow-sm shadow-teal-900/15 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-2 bg-[#0075DE] hover:bg-[#0062BD] active:bg-[#005BAB] text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shadow-2xs cursor-pointer flex items-center justify-center gap-2"
           >
             {loading ? (
               <>

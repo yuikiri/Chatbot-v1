@@ -101,7 +101,7 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
 
   const sourceUrl = citation.url || (doc ? extractSourceUrl(doc.content) : null);
 
-  // Chuẩn hóa văn bản thành CHUNG FORM (dễ nhìn, bất kể là TXT hay MD) và chèn thẻ BÔI ĐẬM
+  // Chuẩn hóa văn bản thành CHUNG FORM và chèn thẻ BÔI ĐẬM
   const renderFormattedDocumentWithHighlight = (content: string) => {
     if (!content) return "";
 
@@ -117,7 +117,6 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
         startIdx = foundIdx;
         endIdx = foundIdx + cleanSnippet.length;
       } else {
-        // Fallback: Tìm theo 45 ký tự đầu của snippet
         const head = cleanSnippet.slice(0, Math.min(45, cleanSnippet.length));
         const headIdx = raw.indexOf(head);
         if (headIdx !== -1) {
@@ -136,19 +135,15 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
       markedText = raw.slice(0, startIdx) + MARK_START + raw.slice(startIdx, endIdx) + MARK_END + raw.slice(endIdx);
     }
 
-    // Chuẩn hóa định dạng chung ("chung form" cho cả txt và md)
-    // 1. Biến các dòng thông tin trường thuộc tính viết hoa thành Markdown in đậm
+    // Chuẩn hóa định dạng chung
     markedText = markedText.replace(/^(TÊN HOẠT CHẤT|TÊN BIỆT DƯỢC PHỔ BIẾN|NHÓM THUỐC|MỨC ĐỘ AN TOÀN CHO CON BÚ|TIÊU ĐỀ|NGUỒN TRÍCH DẪN|TÁC GIẢ|NGÀY TẢI LÊN):\s*(.+)$/gim,
       "**$1:** $2\n");
 
-    // 2. Biến các tiêu đề mục lớn viết hoa thành Heading cấp 3 Markdown
     markedText = markedText.replace(/^(TỔNG QUAN Y VĂN|DƯỢC ĐỘNG HỌC & BÀI TIẾT VÀO SỮA|DƯỢC ĐỘNG HỌC & BÀI TIẾT|TÁC DỤNG PHỤ Ở TRẺ BÚ MẸ|LƯU Ý QUAN TRỌNG KHI SỬ DỤNG|LƯU Ý QUAN TRỌNG|NGUỒN TRÍCH DẪN|NỘI DUNG|TỔNG QUAN|CHỈ ĐỊNH|CHỐNG CHỈ ĐỊNH|LIỀU DÙNG):\s*$/gim,
       "\n### $1\n");
 
-    // 3. Render qua thư viện Markdown (marked)
     let html = marked.parse(markedText, { breaks: true }) as string;
 
-    // 4. Thay thế marker thành thẻ <mark> bôi đậm màu vàng nổi bật kèm ID để scroll
     const highlightTag = `<mark id="citation-highlight-target">`;
     html = html.replace(MARK_START, highlightTag).replace(MARK_END, "</mark>");
 
@@ -156,26 +151,26 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-2.5 sm:p-5 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden border border-slate-200/90">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-2.5 sm:p-5 animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl shadow-notion-float w-full max-w-4xl max-h-[90dvh] sm:max-h-[88vh] flex flex-col overflow-hidden border border-black/10">
         {/* Header Modal */}
-        <div className={`flex items-center justify-between px-6 py-4 border-b border-slate-200/80 ${isExternal ? "bg-indigo-50/60" : "bg-teal-50/60"}`}>
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-black/8 bg-white">
           <div className="flex items-center space-x-3 truncate">
-            <div className={`p-2.5 text-white rounded-xl shadow-2xs shrink-0 ${isExternal ? "bg-indigo-600" : "bg-teal-600"}`}>
+            <div className={`p-2 rounded-lg shrink-0 ${isExternal ? "bg-[#E6F3FE] text-[#0075DE]" : "bg-[#D0F4D8] text-[#1AAE39]"}`}>
               {isExternal ? <Globe className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
             </div>
             <div className="truncate">
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 flex flex-wrap items-center gap-2">
+              <h3 className="text-sm sm:text-base font-semibold text-black flex flex-wrap items-center gap-2">
                 <span className="truncate max-w-xs sm:max-w-md">{displayDocName}</span>
-                <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${
+                <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold shrink-0 border ${
                   isExternal 
-                    ? "bg-indigo-100 text-indigo-800 border border-indigo-200" 
-                    : "bg-teal-100 text-teal-800 border border-teal-200"
+                    ? "bg-[#E6F3FE] text-[#005BAB] border-[#0075DE]/20" 
+                    : "bg-[#D0F4D8]/60 text-[#1AAE39] border-[#1AAE39]/20"
                 }`}>
                   {isExternal ? "Nguồn y tế quốc tế đã kiểm chứng" : "Chuyên luận thẩm định cơ sở"}
                 </span>
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              <p className="text-xs text-black/50 mt-0.5 font-medium">
                 {isExternal 
                   ? `Cơ quan kiểm chứng: ${verifiedOrg || "Tổ chức y tế chính thống"} | Mức độ tin cậy: ${(relevanceScore * 100).toFixed(0)}%`
                   : `Độ tương thích y văn: ${(relevanceScore * 100).toFixed(0)}% | Phác đồ an toàn cho phụ nữ cho con bú`}
@@ -183,8 +178,9 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/80 rounded-xl transition shrink-0 ml-2 cursor-pointer"
+            className="p-1.5 text-black/40 hover:text-black hover:bg-black/5 rounded-md transition shrink-0 ml-2 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -192,18 +188,19 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
 
         {/* Thanh công cụ thao tác nhanh cho tài liệu nội bộ */}
         {!isExternal && doc && (
-          <div className="px-6 py-2.5 bg-amber-50/50 border-b border-amber-200/60 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2 text-amber-950 font-medium">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+          <div className="px-6 py-2 bg-[#FFFDF5] border-b border-[#FFB110]/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-[#78350F] font-medium">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#FFB110] animate-pulse shrink-0"></span>
               <span>Đoạn bôi đậm màu hổ phách là thông tin căn cứ giải đáp câu hỏi của bạn</span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={scrollToHighlight}
-                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold rounded-lg border border-amber-300/80 shadow-2xs transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#78350F] font-semibold rounded-md border border-[#FFB110]/30 shadow-2xs transition cursor-pointer"
               >
-                <Target className="w-3.5 h-3.5 text-amber-700" />
+                <Target className="w-3.5 h-3.5 text-[#B45309]" />
                 <span>Cuộn đến đoạn trích dẫn</span>
               </button>
 
@@ -212,7 +209,7 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
                   href={sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg shadow-2xs transition no-underline"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#0075DE] hover:bg-[#0062BD] text-white font-semibold rounded-md shadow-2xs transition no-underline"
                 >
                   <Globe className="w-3.5 h-3.5" />
                   <span>Trang web gốc</span>
@@ -223,41 +220,41 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
           </div>
         )}
 
-        {/* Thân hiển thị tài liệu dạng "Chung form" chuẩn mực */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/40">
+        {/* Thân hiển thị tài liệu dạng Serif chuẩn Notion Editorial */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 bg-[#F6F5F4]/40">
           {/* NGUỒN EXTERNAL INTERNET */}
           {isExternal ? (
             <div className="space-y-4">
-              <div className="bg-white p-6 rounded-2xl border border-indigo-100 shadow-subtle space-y-4">
+              <div className="bg-white p-6 rounded-xl border border-black/8 shadow-2xs space-y-4">
                 <div className="flex items-start gap-3">
-                  <div className="p-2.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200">
-                    <CheckCircle2 className="w-6 h-6 shrink-0" />
+                  <div className="p-2 bg-[#D0F4D8] text-[#1AAE39] rounded-lg">
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">
+                    <h4 className="text-sm font-semibold text-black">
                       Nguồn đối soát y khoa chính thống
                     </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-black/50 mt-0.5">
                       Được thẩm định theo tiêu chuẩn dữ liệu dược học lâm sàng cho phụ nữ cho con bú.
                     </p>
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed">
-                  <div className="font-semibold text-slate-900 mb-1">Tóm tắt cơ sở dữ liệu:</div>
+                <div className="p-4 bg-[#F6F5F4] rounded-lg border border-black/8 text-xs text-black/80 font-serif leading-relaxed">
+                  <div className="font-sans font-semibold text-black mb-1">Tóm tắt cơ sở dữ liệu:</div>
                   <p>{citation.snippet}</p>
                 </div>
 
                 {sourceUrl && (
-                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
-                    <div className="text-xs text-slate-500 truncate max-w-sm">
-                      <span className="font-semibold">Địa chỉ tra cứu:</span> {sourceUrl}
+                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-black/8">
+                    <div className="text-xs text-black/50 truncate max-w-sm">
+                      <span className="font-semibold text-black">Địa chỉ tra cứu:</span> {sourceUrl}
                     </div>
                     <a
                       href={sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-sm hover:scale-[1.02] no-underline"
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white text-xs font-semibold rounded-lg transition shadow-2xs no-underline"
                     >
                       <Globe className="w-4 h-4" />
                       <span>Truy cập trang web gốc kiểm chứng</span>
@@ -267,8 +264,8 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
                 )}
               </div>
 
-              <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/80 text-xs text-amber-950 leading-relaxed flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div className="p-3.5 bg-[#FFFDF5] rounded-lg border border-[#FFB110]/30 text-xs text-[#78350F] leading-relaxed flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#FFB110] shrink-0 mt-0.5" />
                 <span>
                   <strong>Quy chuẩn kiểm chứng:</strong> Các nguồn nghiên cứu mở rộng chỉ công nhận các cơ sở dữ liệu y tế quốc tế có bình duyệt (Peer-reviewed) như LactMed (Viện Y tế Quốc gia Hoa Kỳ NIH/NLM), e-lactancia (APILAM), và Dược thư Quốc gia.
                 </span>
@@ -278,28 +275,28 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
             /* TÀI LIỆU NỘI BỘ (CHUNG FORM CHO CẢ TXT VÀ MD) */
             <>
               {loading && (
-                <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-                  <p className="text-sm font-medium">Đang tải và định dạng toàn văn tài liệu y khoa...</p>
+                <div className="flex flex-col items-center justify-center py-20 text-black/40 gap-3">
+                  <Loader2 className="w-7 h-7 animate-spin text-[#0075DE]" />
+                  <p className="text-xs font-medium">Đang tải và định dạng toàn văn tài liệu y khoa...</p>
                 </div>
               )}
 
               {error && (
-                <div className="p-4 bg-rose-50 text-rose-700 text-sm rounded-xl border border-rose-200">
+                <div className="p-4 bg-rose-50 text-rose-700 text-xs rounded-lg border border-rose-200">
                   {error}
                 </div>
               )}
 
               {!loading && !error && doc && (
-                <div className="bg-white p-7 rounded-2xl border border-slate-200/80 shadow-subtle space-y-4">
-                  <div className="pb-3 border-b border-slate-100 flex items-center justify-between text-xs text-teal-800">
-                    <span className="font-bold">Hồ sơ chuyên luận lâm sàng chuẩn y tế</span>
-                    <span className="text-slate-400 font-medium">Đối soát chuẩn Dược thư & LactMed®</span>
+                <div className="bg-white p-6 sm:p-8 rounded-xl border border-black/8 shadow-2xs space-y-4">
+                  <div className="pb-3 border-b border-black/8 flex items-center justify-between text-xs text-[#0075DE]">
+                    <span className="font-semibold">Hồ sơ chuyên luận lâm sàng chuẩn y tế</span>
+                    <span className="text-black/40 font-mono text-[11px]">Đối soát chuẩn Dược thư & LactMed®</span>
                   </div>
 
                   {/* VĂN BẢN ĐÃ ĐƯỢC CHUYỂN THÀNH CHUNG FORM ĐẸP MẮT VÀ BÔI ĐẬM CĂN CỨ */}
                   <div
-                    className="medical-prose max-w-none text-slate-800"
+                    className="medical-prose font-serif text-[14.5px] leading-[1.7] text-black/85 max-w-none"
                     dangerouslySetInnerHTML={{
                       __html: renderFormattedDocumentWithHighlight(doc.content)
                     }}
@@ -311,8 +308,8 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-          <div className="text-xs text-slate-500 truncate max-w-md font-medium">
+        <div className="px-6 py-3 border-t border-black/8 bg-white flex items-center justify-between">
+          <div className="text-xs text-black/50 truncate max-w-md font-medium">
             {sourceUrl ? (
               <span className="truncate">Nguồn trích dẫn: {sourceUrl}</span>
             ) : (
@@ -320,8 +317,9 @@ export const CitationModal: React.FC<Props> = ({ citation, onClose }) => {
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer"
+            className="px-4 py-1.5 bg-[#F6F5F4] hover:bg-black/5 border border-black/10 text-black text-xs font-semibold rounded-lg transition cursor-pointer"
           >
             Đóng
           </button>
