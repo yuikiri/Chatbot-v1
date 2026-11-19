@@ -44,3 +44,9 @@ Thumbs.db
 # Logs and diagnostics
 *.log
 logs/
+
+# doc
+.agents/
+Docs/
+graphify-out/
+Plans/
