@@ -43,3 +43,41 @@ public class CitationItem
 public record ChatRequest(string Message, string? Mode = "strict");
 public record CrawlDocumentRequest(string Url);
 public record UpdateModelConfigRequest(string? Provider, string? Model, string? BaseUrl, string? ApiKey, string? EmbeddingModel);
+
+public class ScenarioEntity
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Code { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string ClaimText { get; set; } = string.Empty;
+    public string Platform { get; set; } = "Khác";
+    public string DoubtSignals { get; set; } = string.Empty;
+    public string PotentialRisk { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; } = 0;
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public record CreateScenarioRequest(
+    string? Code,
+    string Title,
+    string ClaimText,
+    string? Platform,
+    string? DoubtSignals,
+    string? PotentialRisk,
+    int? DisplayOrder,
+    bool? IsActive
+);
+
+public record UpdateScenarioRequest(
+    string? Code,
+    string? Title,
+    string? ClaimText,
+    string? Platform,
+    string? DoubtSignals,
+    string? PotentialRisk,
+    int? DisplayOrder,
+    bool? IsActive
+);
+

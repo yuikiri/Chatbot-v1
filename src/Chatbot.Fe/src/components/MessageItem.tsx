@@ -250,7 +250,7 @@ export const MessageItem: React.FC<Props> = ({
               <div className="w-5 h-5 rounded-md bg-[#F6F5F4] text-[#0075DE] border border-black/8 flex items-center justify-center">
                 <Stethoscope className="w-3 h-3 text-[#0075DE]" />
               </div>
-              <span className="text-xs font-semibold text-black tracking-tight">LactaMed AI</span>
+              <span className="text-xs font-semibold text-black tracking-tight">Health Care</span>
               {renderModeBadge()}
             </div>
             {renderSafetyBadge(message.safetyLevel)}

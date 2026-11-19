@@ -111,14 +111,14 @@ export const Sidebar: React.FC<Props> = ({
             <div 
               onClick={handleLogoTap}
               className="flex items-center gap-2 cursor-pointer select-none group active:scale-95 transition-transform"
-              title="LactaMed AI - Chạm 3 lần để mở Cổng Quản Trị"
+              title="Health Care - Chạm 3 lần để mở Cổng Quản Trị"
             >
               <div className="w-7 h-7 rounded-md bg-[#1A1A1A] flex items-center justify-center text-white shadow-2xs group-hover:scale-105 transition-transform">
                 <ShieldCheck className="w-4 h-4 text-white" />
               </div>
               <div>
                 <h1 className="font-semibold text-xs text-black tracking-tight flex items-center gap-1.5">
-                  <span>LactaMed AI</span>
+                  <span>Health Care</span>
                   <span className="text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.2 rounded-xs bg-black/5 text-black/70 border border-black/10">
                     Pro
                   </span>

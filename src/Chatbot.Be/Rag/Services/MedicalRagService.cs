@@ -341,7 +341,7 @@ public class MedicalRagService
         }
         catch (Exception ex)
         {
-            var formatted = LlmErrorFormatter.Format(ex, "LactaMed AI", mode);
+            var formatted = LlmErrorFormatter.Format(ex, "Health Care", mode);
             Console.WriteLine($"[RAG Lỗi Chuẩn Hóa] {formatted.AdminSummary}");
 
             return new RagQueryResult(

@@ -18,7 +18,13 @@ import {
   adminUpdateModelConfig,
   adminTestModelConfig,
   adminGetMetrics,
-  verifyAdminKey
+  verifyAdminKey,
+  type ScenarioItem,
+  adminGetScenarios,
+  adminCreateScenario,
+  adminUpdateScenario,
+  adminDeleteScenario,
+  adminResetScenarios
 } from "../services/api";
 import {
   type UserProfile,
@@ -70,7 +76,10 @@ import {
   Copy,
   Download,
   ExternalLink,
-  X
+  X,
+  BookOpen,
+  Plus,
+  Edit2
 } from "lucide-react";
 
 interface Props {
@@ -83,8 +92,29 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
   const [adminKey, setAdminKey] = useState(sessionStorage.getItem("chatbot_admin_key") || "");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [activeTab, setActiveTab] = useState<"users" | "incidents" | "models" | "knowledge">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "incidents" | "models" | "knowledge" | "scenarios">("users");
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // -------------------------------------------------------------
+  // TAB 5: SCENARIOS (PROMPT 04) STATE
+  // -------------------------------------------------------------
+  const [adminScenarios, setAdminScenarios] = useState<ScenarioItem[]>([]);
+  const [scenariosLoading, setScenariosLoading] = useState(false);
+  const [scenariosSearchQuery, setScenariosSearchQuery] = useState("");
+  const [scenarioFilterPlatform, setScenarioFilterPlatform] = useState("all");
+  const [isScenarioFormOpen, setIsScenarioFormOpen] = useState(false);
+  const [editingScenarioId, setEditingScenarioId] = useState<string | null>(null);
+
+  const [formCode, setFormCode] = useState("");
+  const [formTitle, setFormTitle] = useState("");
+  const [formPlatform, setFormPlatform] = useState("TikTok");
+  const [formClaimText, setFormClaimText] = useState("");
+  const [formDoubtSignals, setFormDoubtSignals] = useState("");
+  const [formPotentialRisk, setFormPotentialRisk] = useState("");
+  const [formDisplayOrder, setFormDisplayOrder] = useState(1);
+  const [formIsActive, setFormIsActive] = useState(true);
+  const [savingScenario, setSavingScenario] = useState(false);
+  const [resettingScenarios, setResettingScenarios] = useState(false);
 
   // -------------------------------------------------------------
   // TAB 1: USERS & CHATS STATE
@@ -250,6 +280,123 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
     loadModelConfigAndMetrics(validKey);
     loadCatalog(validKey);
     loadDocs();
+    loadAdminScenarios(validKey);
+  };
+
+  const loadAdminScenarios = async (key?: string) => {
+    const k = key || adminKey;
+    if (!k) return;
+    setScenariosLoading(true);
+    try {
+      const data = await adminGetScenarios(k);
+      setAdminScenarios(data);
+    } catch (err: any) {
+      setFeedbackMsg({ text: err.message || "Không thể tải danh sách tình huống", type: "error" });
+    } finally {
+      setScenariosLoading(false);
+    }
+  };
+
+  const handleOpenCreateScenario = () => {
+    setEditingScenarioId(null);
+    setFormCode(`TH${String(adminScenarios.length + 1).padStart(2, '0')}`);
+    setFormTitle("");
+    setFormPlatform("TikTok");
+    setFormClaimText("");
+    setFormDoubtSignals("");
+    setFormPotentialRisk("");
+    setFormDisplayOrder(adminScenarios.length + 1);
+    setFormIsActive(true);
+    setIsScenarioFormOpen(true);
+  };
+
+  const handleOpenEditScenario = (s: ScenarioItem) => {
+    setEditingScenarioId(s.id);
+    setFormCode(s.code);
+    setFormTitle(s.title);
+    setFormPlatform(s.platform);
+    setFormClaimText(s.claimText);
+    setFormDoubtSignals(s.doubtSignals);
+    setFormPotentialRisk(s.potentialRisk);
+    setFormDisplayOrder(s.displayOrder);
+    setFormIsActive(s.isActive);
+    setIsScenarioFormOpen(true);
+  };
+
+  const handleSaveScenario = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formTitle.trim() || !formClaimText.trim()) {
+      alert("Vui lòng nhập tiêu đề và nội dung tuyên bố!");
+      return;
+    }
+    setSavingScenario(true);
+    try {
+      if (editingScenarioId) {
+        await adminUpdateScenario(editingScenarioId, {
+          code: formCode.trim(),
+          title: formTitle.trim(),
+          platform: formPlatform.trim(),
+          claimText: formClaimText.trim(),
+          doubtSignals: formDoubtSignals.trim(),
+          potentialRisk: formPotentialRisk.trim(),
+          displayOrder: Number(formDisplayOrder),
+          isActive: formIsActive
+        }, adminKey);
+        setFeedbackMsg({ text: "Cập nhật tình huống thành công!", type: "success" });
+      } else {
+        await adminCreateScenario({
+          code: formCode.trim(),
+          title: formTitle.trim(),
+          platform: formPlatform.trim(),
+          claimText: formClaimText.trim(),
+          doubtSignals: formDoubtSignals.trim(),
+          potentialRisk: formPotentialRisk.trim(),
+          displayOrder: Number(formDisplayOrder),
+          isActive: formIsActive
+        }, adminKey);
+        setFeedbackMsg({ text: "Tạo tình huống kiểm chứng thành công!", type: "success" });
+      }
+      setIsScenarioFormOpen(false);
+      await loadAdminScenarios();
+    } catch (err: any) {
+      alert(err.message || "Lỗi lưu tình huống.");
+    } finally {
+      setSavingScenario(false);
+    }
+  };
+
+  const handleDeleteScenario = async (id: string, title: string) => {
+    if (!confirm(`Bạn có chắc muốn xóa tình huống "${title}" không?`)) return;
+    try {
+      await adminDeleteScenario(id, adminKey);
+      setFeedbackMsg({ text: `Đã xóa tình huống "${title}"`, type: "success" });
+      await loadAdminScenarios();
+    } catch (err: any) {
+      alert(err.message || "Không thể xóa tình huống.");
+    }
+  };
+
+  const handleToggleScenarioActive = async (s: ScenarioItem) => {
+    try {
+      await adminUpdateScenario(s.id, { isActive: !s.isActive }, adminKey);
+      await loadAdminScenarios();
+    } catch (err: any) {
+      alert(err.message || "Không thể cập nhật trạng thái.");
+    }
+  };
+
+  const handleResetDefaultScenarios = async () => {
+    if (!confirm("Khôi phục danh sách về 15 tình huống mặc định từ Prompt 04? Toàn bộ tình huống hiện tại sẽ được cập nhật lại theo dữ liệu chuẩn.")) return;
+    setResettingScenarios(true);
+    try {
+      const data = await adminResetScenarios(adminKey);
+      setAdminScenarios(data);
+      setFeedbackMsg({ text: "Đã khôi phục 15 tình huống gốc từ Prompt 04!", type: "success" });
+    } catch (err: any) {
+      alert(err.message || "Lỗi khôi phục tình huống.");
+    } finally {
+      setResettingScenarios(false);
+    }
   };
 
   const loadCatalog = async (key: string) => {
@@ -855,6 +1002,15 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
           <Database className="w-3.5 h-3.5 text-[#1AAE39]" />
           <span>Tri thức ({documents.length})</span>
         </button>
+        <button
+          onClick={() => { setActiveTab("scenarios"); }}
+          className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === "scenarios" ? "bg-white text-black shadow-2xs border border-black/8" : "text-black/60 hover:text-black hover:bg-black/5"
+          }`}
+        >
+          <BookOpen className="w-3.5 h-3.5 text-[#0075DE]" />
+          <span>Tình huống ({adminScenarios.length})</span>
+        </button>
       </div>
 
       {/* DESKTOP SIDEBAR QUẢN TRỊ NOTION WARM STONE */}
@@ -968,6 +1124,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
               </div>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/6 text-black/70 font-mono">
                 {documents.length} docs
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("scenarios")}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition cursor-pointer ${
+                activeTab === "scenarios"
+                  ? "bg-white text-black font-semibold shadow-2xs border border-black/8"
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <BookOpen className="w-4 h-4 text-[#0075DE]" />
+                <span>Tình huống (Prompt 4)</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/6 text-black/70 font-mono">
+                {adminScenarios.length} cases
               </span>
             </button>
           </nav>
@@ -1492,7 +1665,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                             >
                               <div className="flex items-center gap-2 mb-1 px-1 text-[10px] text-black/40">
                                 <span className="font-semibold text-black/60">
-                                  {isUserMsg ? "Người dùng" : "LactaMed AI"}
+                                  {isUserMsg ? "Người dùng" : "Health Care"}
                                 </span>
                                 <span>•</span>
                                 <span>{formatConversationTime(m.timestamp)}</span>
@@ -2982,6 +3155,339 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ============================================================= */}
+        {/* TAB 5: SCENARIOS MANAGEMENT (PROMPT 04)                       */}
+        {/* ============================================================= */}
+        {activeTab === "scenarios" && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 animate-in fade-in duration-200">
+            {/* Header Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-black/8">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-black flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-[#0075DE]" />
+                  <span>Quản Lý Tình Huống Kiểm Chứng (Prompt 04)</span>
+                </h2>
+                <p className="text-xs text-black/55 mt-0.5">
+                  Quản lý danh sách các tình huống thông tin thuốc mạng xã hội phục vụ kiểm chứng y học theo CRAAP & SIFT.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleResetDefaultScenarios}
+                  disabled={resettingScenarios}
+                  className="px-3 py-1.5 bg-[#F6F5F4] hover:bg-black/8 text-black/80 rounded-lg text-xs font-semibold border border-black/10 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Khôi phục danh sách về 15 tình huống mặc định từ báo cáo Prompt 04"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${resettingScenarios ? "animate-spin text-[#0075DE]" : ""}`} />
+                  <span>Khôi phục 15 TH gốc</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenCreateScenario}
+                  className="px-3.5 py-1.5 bg-[#0075DE] hover:bg-[#0062BD] text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm Tình Huống Mới</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-black/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm theo mã số, tiêu đề, hoạt chất hoặc nội dung tuyên bố..."
+                  value={scenariosSearchQuery}
+                  onChange={(e) => setScenariosSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-black/10 rounded-xl text-xs sm:text-sm text-black placeholder-black/40 focus:outline-none focus:border-[#0075DE]"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+                {["all", "TikTok", "Facebook", "YouTube", "Website bán hàng", "Khác"].map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setScenarioFilterPlatform(p)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition cursor-pointer border ${
+                      scenarioFilterPlatform === p
+                        ? "bg-[#0075DE] text-white border-[#0075DE] shadow-2xs"
+                        : "bg-white text-black/60 hover:text-black hover:bg-[#F6F5F4] border-black/10"
+                    }`}
+                  >
+                    {p === "all" ? "Tất cả nền tảng" : p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Scenarios Table */}
+            <div className="bg-white border border-black/8 rounded-xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F6F5F4] text-black/55 uppercase font-semibold text-[11px] tracking-[0.04em] border-b border-black/8">
+                    <tr>
+                      <th className="px-4 py-2.5 w-16">Mã</th>
+                      <th className="px-4 py-2.5 w-48">Tiêu Đề / Hoạt Chất</th>
+                      <th className="px-4 py-2.5 w-28">Nền Tảng</th>
+                      <th className="px-4 py-2.5">Nội Dung Tuyên Bố (Claim)</th>
+                      <th className="px-4 py-2.5 w-28 text-center">Trạng Thái</th>
+                      <th className="px-4 py-2.5 w-24 text-right">Thao Tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/6 bg-white">
+                    {scenariosLoading ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-12 text-center text-black/40">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto text-[#0075DE] mb-2" />
+                          <span>Đang nạp dữ liệu tình huống...</span>
+                        </td>
+                      </tr>
+                    ) : adminScenarios.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-12 text-center text-black/40">
+                          Chưa có tình huống nào trong hệ thống. Nhấn "Khôi phục 15 TH gốc" để tự động nạp dữ liệu từ Prompt 04.
+                        </td>
+                      </tr>
+                    ) : (
+                      adminScenarios
+                        .filter((s) => {
+                          const matchPlatform = scenarioFilterPlatform === "all" || s.platform.toLowerCase() === scenarioFilterPlatform.toLowerCase();
+                          const q = scenariosSearchQuery.toLowerCase().trim();
+                          const matchQ = !q || s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q) || s.claimText.toLowerCase().includes(q);
+                          return matchPlatform && matchQ;
+                        })
+                        .map((s) => (
+                          <tr key={s.id} className="hover:bg-[#F6F5F4]/60 transition">
+                            <td className="px-4 py-3 font-mono font-bold text-black/80">
+                              {s.code || "--"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-black leading-snug">{s.title}</div>
+                              <div className="text-[10px] text-black/45 mt-0.5">Thứ tự: {s.displayOrder}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-black/5 text-black/75 border-black/10">
+                                {s.platform}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 max-w-md">
+                              <p className="text-black/80 line-clamp-2 italic text-[11px] mb-1">
+                                "{s.claimText}"
+                              </p>
+                              {(s.doubtSignals || s.potentialRisk) && (
+                                <div className="text-[10px] text-black/50 space-y-0.5">
+                                  {s.doubtSignals && (
+                                    <div className="truncate text-amber-800">
+                                      <span className="font-semibold">Nghi ngờ:</span> {s.doubtSignals}
+                                    </div>
+                                  )}
+                                  {s.potentialRisk && (
+                                    <div className="truncate text-red-800">
+                                      <span className="font-semibold">Nguy cơ:</span> {s.potentialRisk}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleScenarioActive(s)}
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer border transition ${
+                                  s.isActive
+                                    ? "bg-[#D0F4D8] text-[#1AAE39] border-[#1AAE39]/30"
+                                    : "bg-gray-100 text-gray-500 border-gray-300"
+                                }`}
+                              >
+                                {s.isActive ? "Đang hiện" : "Đã ẩn"}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditScenario(s)}
+                                  className="p-1.5 text-black/40 hover:text-[#0075DE] rounded-md hover:bg-black/5 transition cursor-pointer"
+                                  title="Chỉnh sửa tình huống"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteScenario(s.id, s.title)}
+                                  className="p-1.5 text-black/40 hover:text-[#F64932] rounded-md hover:bg-rose-50 transition cursor-pointer"
+                                  title="Xóa tình huống"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Tạo/Sửa Tình Huống */}
+            {isScenarioFormOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in">
+                <div 
+                  className="bg-white border border-black/10 rounded-2xl shadow-notion-float w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-black animate-in zoom-in-95"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-6 py-4 border-b border-black/8 flex items-center justify-between bg-[#FBFBFA]">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-[#0075DE]" />
+                      <h3 className="text-sm font-bold text-black">
+                        {editingScenarioId ? "Chỉnh Sửa Tình Huống" : "Thêm Tình Huống Mới"}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsScenarioFormOpen(false)}
+                      className="p-1 text-black/40 hover:text-black rounded-lg hover:bg-black/5 cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveScenario} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-black/70 font-semibold mb-1">Mã tình huống (Code):</label>
+                        <input
+                          type="text"
+                          value={formCode}
+                          onChange={(e) => setFormCode(e.target.value)}
+                          placeholder="Ví dụ: TH01, TH02..."
+                          className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE]"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-black/70 font-semibold mb-1">Nền tảng xuất hiện:</label>
+                        <select
+                          value={formPlatform}
+                          onChange={(e) => setFormPlatform(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE]"
+                        >
+                          <option value="TikTok">TikTok</option>
+                          <option value="Facebook">Facebook</option>
+                          <option value="YouTube">YouTube</option>
+                          <option value="Website bán hàng">Website bán hàng</option>
+                          <option value="Khác">Khác</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-black/70 font-semibold mb-1">Tiêu đề / Tên hoạt chất liên quan (*):</label>
+                      <input
+                        type="text"
+                        required
+                        value={formTitle}
+                        onChange={(e) => setFormTitle(e.target.value)}
+                        placeholder="Ví dụ: Cần tây + dứa thay Metformin trị đái tháo đường"
+                        className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-black/70 font-semibold mb-1">Nội dung tuyên bố lan truyền (Claim) (*):</label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={formClaimText}
+                        onChange={(e) => setFormClaimText(e.target.value)}
+                        placeholder="Nội dung chi tiết của bài đăng hoặc video trên mạng xã hội..."
+                        className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE] leading-relaxed"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-black/70 font-semibold mb-1">Dấu hiệu đáng nghi (Red Flags):</label>
+                      <textarea
+                        rows={2}
+                        value={formDoubtSignals}
+                        onChange={(e) => setFormDoubtSignals(e.target.value)}
+                        placeholder="Dấu hiệu giật gân, cam kết 100%, giả danh bác sĩ..."
+                        className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-black/70 font-semibold mb-1">Nguy cơ đối với người dùng (Clinical Risks):</label>
+                      <textarea
+                        rows={2}
+                        value={formPotentialRisk}
+                        onChange={(e) => setFormPotentialRisk(e.target.value)}
+                        placeholder="Độc tính gan, suy thận, tụt đường huyết, tương tác thuốc nguy hiểm..."
+                        className="w-full px-3 py-2 bg-white border border-black/10 rounded-lg text-xs text-black focus:outline-none focus:border-[#0075DE]"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-6 pt-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-black/70 font-semibold">Thứ tự hiển thị:</label>
+                        <input
+                          type="number"
+                          value={formDisplayOrder}
+                          onChange={(e) => setFormDisplayOrder(Number(e.target.value))}
+                          className="w-20 px-2 py-1 bg-white border border-black/10 rounded-lg text-xs text-black text-center"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formIsActive}
+                          onChange={(e) => setFormIsActive(e.target.checked)}
+                          className="w-4 h-4 text-[#0075DE] rounded"
+                        />
+                        <span className="text-black/80 font-medium">Kích hoạt hiển thị cho người dùng</span>
+                      </label>
+                    </div>
+
+                    <div className="pt-4 border-t border-black/8 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsScenarioFormOpen(false)}
+                        className="px-4 py-2 bg-[#F6F5F4] hover:bg-black/5 text-black rounded-lg text-xs font-medium cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingScenario}
+                        className="px-5 py-2 bg-[#0075DE] hover:bg-[#0062BD] text-white rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        {savingScenario ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Đang lưu...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Lưu Tình Huống</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

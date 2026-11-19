@@ -405,3 +405,110 @@ export async function adminTestModelConfig(
   return await res.json();
 }
 
+// -------------------------------------------------------------
+// TÌNH HUỐNG KIỂM CHỨNG (SCENARIOS - PROMPT 04)
+// -------------------------------------------------------------
+
+export interface ScenarioItem {
+  id: string;
+  code: string;
+  title: string;
+  claimText: string;
+  platform: string;
+  doubtSignals: string;
+  potentialRisk: string;
+  displayOrder: number;
+  isActive: boolean;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+}
+
+export async function getScenarios(): Promise<ScenarioItem[]> {
+  const res = await fetch(`${API_BASE}/api/scenarios`);
+  if (!res.ok) {
+    throw new Error("Không thể tải danh sách tình huống kiểm chứng");
+  }
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function adminGetScenarios(adminKey: string): Promise<ScenarioItem[]> {
+  const res = await fetch(`${API_BASE}/api/admin/scenarios`, {
+    headers: { "X-Admin-Key": adminKey }
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Mật khẩu Admin không chính xác.");
+    throw new Error("Không thể tải danh sách tình huống");
+  }
+  const json = await res.json();
+  return json.data || [];
+}
+
+export async function adminCreateScenario(
+  data: Partial<ScenarioItem>,
+  adminKey: string
+): Promise<ScenarioItem> {
+  const res = await fetch(`${API_BASE}/api/admin/scenarios`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Key": adminKey
+    },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Mật khẩu Admin không chính xác.");
+    const err = await res.json().catch(() => ({ message: "Tạo tình huống thất bại." }));
+    throw new Error(err.message || "Tạo tình huống thất bại.");
+  }
+  const json = await res.json();
+  return json.data;
+}
+
+export async function adminUpdateScenario(
+  id: string,
+  data: Partial<ScenarioItem>,
+  adminKey: string
+): Promise<ScenarioItem> {
+  const res = await fetch(`${API_BASE}/api/admin/scenarios/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Key": adminKey
+    },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Mật khẩu Admin không chính xác.");
+    const err = await res.json().catch(() => ({ message: "Cập nhật tình huống thất bại." }));
+    throw new Error(err.message || "Cập nhật tình huống thất bại.");
+  }
+  const json = await res.json();
+  return json.data;
+}
+
+export async function adminDeleteScenario(id: string, adminKey: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/scenarios/${id}`, {
+    method: "DELETE",
+    headers: { "X-Admin-Key": adminKey }
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Mật khẩu Admin không chính xác.");
+    throw new Error("Không thể xóa tình huống.");
+  }
+}
+
+export async function adminResetScenarios(adminKey: string): Promise<ScenarioItem[]> {
+  const res = await fetch(`${API_BASE}/api/admin/scenarios/reset-default`, {
+    method: "POST",
+    headers: { "X-Admin-Key": adminKey }
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error("Mật khẩu Admin không chính xác.");
+    throw new Error("Không thể khôi phục dữ liệu gốc.");
+  }
+  const json = await res.json();
+  return json.data || [];
+}
+
+

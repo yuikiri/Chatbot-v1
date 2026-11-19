@@ -154,17 +154,21 @@ var app = builder.Build();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseCors("AllowAll");
 
-// Khởi tạo RAG Index
+// Khởi tạo RAG Index & Dữ liệu Tình huống Mẫu
 using (var scope = app.Services.CreateScope())
 {
     var ragService = scope.ServiceProvider.GetRequiredService<MedicalRagService>();
     await ragService.InitializeAsync();
+
+    var sqliteStore = scope.ServiceProvider.GetRequiredService<SqliteKnowledgeStore>();
+    await sqliteStore.SeedDefaultScenariosAsync();
 }
 
 // 5. Đăng ký các nhóm Endpoint chuyên biệt
 app.MapChatEndpoints();
 app.MapDocumentEndpoints();
 app.MapAdminEndpoints(appStartTime, contentRoot);
+app.MapScenarioEndpoints();
 
 // 6. Phục vụ Frontend Static Files & SPA Fallback
 app.UseDefaultFiles();

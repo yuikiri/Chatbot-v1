@@ -84,7 +84,7 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <ShieldCheck className="w-5 h-5 text-[#0075DE]" />
           </div>
           <h3 className="text-base font-semibold text-black tracking-[-0.025em]">
-            {isRegister ? "Tạo tài khoản LactaMed" : "Đăng nhập LactaMed AI"}
+            {isRegister ? "Tạo tài khoản Health Care" : "Đăng nhập Health Care"}
           </h3>
           <p className="text-xs text-black/55 mt-1 leading-relaxed">
             Đồng bộ và tự động lưu trữ lịch sử tư vấn y khoa trên mọi thiết bị của bạn.

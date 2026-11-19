@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import type { ChatMessage, CitationItem, RagMode } from "../services/api";
 import { useSecretAdmin } from "../hooks/useSecretAdmin";
 import { MessageItem } from "./MessageItem";
+import { ScenarioModal } from "./ScenarioModal";
 import homeIcon from "../common/favicon/2.jpg";
 import { 
   Send, 
@@ -18,7 +19,8 @@ import {
   Activity,
   Check,
   Stethoscope,
-  ChevronRight
+  ChevronRight,
+  BookOpen
 } from "lucide-react";
 
 interface Props {
@@ -50,6 +52,7 @@ export const ChatArea: React.FC<Props> = ({
   const [showColdStartHint, setShowColdStartHint] = useState(false);
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [isDisclaimerExpanded, setIsDisclaimerExpanded] = useState(false);
+  const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const modeMenuRef = useRef<HTMLDivElement>(null);
 
@@ -154,7 +157,7 @@ export const ChatArea: React.FC<Props> = ({
           <div
             onClick={handleHeaderTap}
             className="cursor-pointer select-none group active:scale-[0.99] transition-transform flex items-center gap-2.5"
-            title="LactaMed AI - Trợ Lý Dược Học Lâm Sàng (Chạm 3 lần để mở Cổng Quản Trị)"
+            title="Health Care - Trợ Lý Dược Học Lâm Sàng (Chạm 3 lần để mở Cổng Quản Trị)"
           >
             <div className="w-8 h-8 rounded-lg bg-[#F6F5F4] text-[#0075DE] border border-black/10 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
               <Stethoscope className="w-4 h-4 text-[#0075DE]" />
@@ -162,7 +165,7 @@ export const ChatArea: React.FC<Props> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xs sm:text-sm font-bold text-black tracking-tight">
-                  LactaMed AI
+                  Health Care
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#0075DE] bg-[#E6F3FE] border border-[#0075DE]/20 px-2 py-0.5 rounded-full">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#0075DE] animate-pulse"></span>
@@ -218,7 +221,7 @@ export const ChatArea: React.FC<Props> = ({
             <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#F6F5F4] border border-black/10 rounded-2xl p-1 mb-3.5 mx-auto shadow-2xs overflow-hidden flex items-center justify-center">
               <img 
                 src={homeIcon} 
-                alt="LactaMed AI" 
+                alt="Health Care" 
                 className="w-full h-full object-cover rounded-xl select-none"
               />
             </div>
@@ -259,6 +262,35 @@ export const ChatArea: React.FC<Props> = ({
                   </button>
                 );
               })}
+            </div>
+
+            {/* Nút mở 15 Tình huống Prompt 04 */}
+            <div className="mt-4 max-w-xl mx-auto px-2">
+              <button
+                type="button"
+                onClick={() => setIsScenarioModalOpen(true)}
+                className="w-full p-3 bg-gradient-to-r from-[#E6F3FE]/80 to-white hover:from-[#E6F3FE] hover:to-[#E6F3FE]/30 border border-[#0075DE]/30 rounded-xl text-left transition flex items-center justify-between group shadow-2xs cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#0075DE] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-black group-hover:text-[#0075DE] transition-colors">
+                        Tình huống kiểm chứng thực tế (Prompt 04)
+                      </span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-[#0075DE]/10 text-[#0075DE] border border-[#0075DE]/20">
+                        15 Tình huống
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-black/55 line-clamp-1">
+                      Thuốc giả, tin giật gân trên TikTok, Facebook, YouTube để kiểm chứng theo CRAAP & SIFT
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-black/30 group-hover:text-[#0075DE] group-hover:translate-x-0.5 transition-all shrink-0" />
+              </button>
             </div>
 
             {/* Capability Trust Badges */}
@@ -339,6 +371,17 @@ export const ChatArea: React.FC<Props> = ({
               disabled={isStreaming}
               className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-transparent text-xs sm:text-sm text-black placeholder-black/35 focus:outline-none disabled:opacity-60"
             />
+
+            {/* Nút mở nhanh Modal Tình huống */}
+            <button
+              type="button"
+              onClick={() => setIsScenarioModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-[#F6F5F4] hover:bg-[#E6F3FE] hover:text-[#0075DE] hover:border-[#0075DE]/30 border border-black/10 rounded-lg text-xs font-semibold text-black/75 transition shadow-2xs cursor-pointer shrink-0"
+              title="Xem và chọn tình huống kiểm chứng thực tế (Prompt 04)"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#0075DE] shrink-0" />
+              <span className="hidden md:inline">Tình huống</span>
+            </button>
 
             {/* BỘ CHỌN CHẾ ĐỘ NẰM CẠNH NÚT GỬI */}
             <div className="relative shrink-0" ref={modeMenuRef}>
@@ -460,6 +503,14 @@ export const ChatArea: React.FC<Props> = ({
           </form>
         </div>
       </div>
+
+      {/* Modal chọn Tình huống kiểm chứng (Prompt 04) */}
+      <ScenarioModal
+        isOpen={isScenarioModalOpen}
+        onClose={() => setIsScenarioModalOpen(false)}
+        onInsertClaim={(text) => setInput(text)}
+        onSelectScenario={(text) => onSendMessage(text)}
+      />
     </main>
   );
 };
