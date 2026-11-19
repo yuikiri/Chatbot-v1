@@ -111,7 +111,7 @@ export const Sidebar: React.FC<Props> = ({
             <div 
               onClick={handleLogoTap}
               className="flex items-center gap-2 cursor-pointer select-none group active:scale-95 transition-transform"
-              title="Health Care - Chạm 3 lần để mở Cổng Quản Trị"
+              title="Health Care"
             >
               <div className="w-7 h-7 rounded-md bg-[#1A1A1A] flex items-center justify-center text-white shadow-2xs group-hover:scale-105 transition-transform">
                 <ShieldCheck className="w-4 h-4 text-white" />

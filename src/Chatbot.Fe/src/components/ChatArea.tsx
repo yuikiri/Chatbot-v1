@@ -157,7 +157,7 @@ export const ChatArea: React.FC<Props> = ({
           <div
             onClick={handleHeaderTap}
             className="cursor-pointer select-none group active:scale-[0.99] transition-transform flex items-center gap-2.5"
-            title="Health Care - Trợ Lý Dược Học Lâm Sàng (Chạm 3 lần để mở Cổng Quản Trị)"
+            title="Health Care"
           >
             <div className="w-8 h-8 rounded-lg bg-[#F6F5F4] text-[#0075DE] border border-black/10 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
               <Stethoscope className="w-4 h-4 text-[#0075DE]" />
