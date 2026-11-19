@@ -299,7 +299,7 @@ export function App() {
   }
 
   return (
-    <div className="flex h-[100dvh] h-screen w-screen overflow-hidden bg-slate-50 font-sans">
+    <div className="flex h-[100dvh] h-screen w-screen overflow-hidden bg-white font-sans">
       <Sidebar
         conversations={conversations}
         activeConvId={activeConvId}

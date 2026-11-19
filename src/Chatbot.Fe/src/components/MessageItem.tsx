@@ -377,13 +377,13 @@ export const MessageItem: React.FC<Props> = ({
             </div>
 
             {message.adminReview.correctedResponse && (
-              <div className="p-3 bg-white rounded-lg border border-emerald-200 text-slate-800 leading-relaxed">
-                <div className="text-[11px] font-bold text-emerald-800 mb-1 flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="p-3 bg-white rounded-lg border border-[#1AAE39]/30 text-black/85 leading-relaxed shadow-2xs">
+                <div className="text-[11px] font-bold text-[#15803D] mb-1 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5 text-[#1AAE39]" />
                   <span>Câu trả lời chuẩn y khoa sau hiệu chỉnh:</span>
                 </div>
                 <div 
-                  className="prose prose-xs max-w-none text-slate-800 [&_p]:m-0"
+                  className="prose prose-xs max-w-none text-black/85 [&_p]:m-0"
                   dangerouslySetInnerHTML={{ __html: marked.parse(message.adminReview.correctedResponse, { breaks: true }) as string }}
                 />
               </div>

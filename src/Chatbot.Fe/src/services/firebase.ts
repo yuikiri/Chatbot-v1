@@ -291,6 +291,7 @@ export interface UserProfile {
   createdAt?: any;
   conversationCount?: number;
   totalMessagesCount?: number;
+  messageCount?: number;
   totalTokensEstimated?: number;
   totalCostUsd?: number;
   totalCostVnd?: number;
@@ -701,6 +702,8 @@ export async function addMessageDoctorReview(
     adminNotes?: string;
     correctedResponse?: string;
     adminName?: string;
+    doctorEmail?: string;
+    doctorNotes?: string;
   }
 ) {
   if (!db) return;

@@ -41,56 +41,56 @@
 - [x] Kiểm tra độ đồng nhất giữa các token và quy chuẩn màu.
 
 ### Giai đoạn 2: Cấu hình Theme Base & Typography Frontend (`src/Chatbot.Fe/`)
-- [ ] Cập nhật `index.html`: Nhúng Google Font `Inter` và `Newsreader` (serif trích dẫn), đổi theme-color sang `#0075DE`.
-- [ ] Cập nhật `src/index.css`: Baseline font Inter, scrollbar mảnh nhẹ, focus ring 2px Notion Blue, tinh chỉnh lớp `.medical-prose` kết hợp serif cho blockquote và y văn.
-- [ ] [CHECK] Kiểm tra biên dịch CSS và font hiển thị.
+- [x] Cập nhật `index.html`: Nhúng Google Font `Inter` và `Newsreader` (serif trích dẫn), đổi theme-color sang `#0075DE`.
+- [x] Cập nhật `src/index.css`: Baseline font Inter, scrollbar mảnh nhẹ, focus ring 2px Notion Blue, tinh chỉnh lớp `.medical-prose` kết hợp serif cho blockquote và y văn.
+- [x] [CHECK] Kiểm tra biên dịch CSS và font hiển thị.
 
 ### Giai đoạn 3: Tái cấu trúc Giao diện Điều hướng (Sidebar Navigation)
-- [ ] Chuyển nền sang Warm Stone `bg-[#F6F5F4]`, viền phải `border-r border-black/10`.
-- [ ] Nút "Đoạn chat mới" dạng `button-primary` Notion Blue (`#0075DE` hover `#0062BD`), bo góc 8px.
-- [ ] Danh sách hội thoại phong cách Notion page item: icon `MessageSquare`, hover wash `hover:bg-black/5`, active item viền mờ `border-black/10`, nút rename/hide tinh gọn.
-- [ ] Footer tài khoản tối giản, giữ nguyên logic 3-tap chạm logo mở Cổng Quản Trị và phím tắt `Ctrl+Shift+A`.
-- [ ] [CHECK] Kiểm tra Sidebar trên cả desktop và mobile drawer.
+- [x] Chuyển nền sang Warm Stone `bg-[#F6F5F4]`, viền phải `border-r border-black/10`.
+- [x] Nút "Đoạn chat mới" dạng `button-primary` Notion Blue (`#0075DE` hover `#0062BD`), bo góc 8px.
+- [x] Danh sách hội thoại phong cách Notion page item: icon `MessageSquare`, hover wash `hover:bg-black/5`, active item viền mờ `border-black/10`, nút rename/hide tinh gọn.
+- [x] Footer tài khoản tối giản, giữ nguyên logic 3-tap chạm logo mở Cổng Quản Trị và phím tắt `Ctrl+Shift+A`.
+- [x] [CHECK] Kiểm tra Sidebar trên cả desktop và mobile drawer.
 
 ### Giai đoạn 4: Tái cấu trúc Khung Chat Chính (ChatArea Canvas & Input)
-- [ ] Header 64px nền trắng `bg-white`, under-rule shadow `0 1px 0 0 rgba(0,0,0,0.1)`, RAG mode selector dạng Notion pill dropdown.
-- [ ] Banner disclaimer y khoa thanh mảnh nền `#FFFDF5` hoặc `#F6F5F4` viền hairline.
-- [ ] Hero Empty State: Tiêu đề tracking âm `-0.035em`, 4 thẻ gợi ý nhanh Notion `card-2` (bo góc 12px, viền hairline, icon Link Blue `#097FE8`).
-- [ ] Khung nhập liệu nổi (Floating Input Bar): Bo góc 12px, viền hairline `border-black/14`, focus ring 2px `#0075DE`, nút gửi tròn Notion Blue.
-- [ ] [CHECK] Kiểm tra tương tác gửi tin, chuyển chế độ RAG, giao diện trên mobile.
+- [x] Header 64px nền trắng `bg-white`, under-rule shadow `0 1px 0 0 rgba(0,0,0,0.1)`, RAG mode selector dạng Notion pill dropdown.
+- [x] Banner disclaimer y khoa thanh mảnh nền `#FFFDF5` hoặc `#F6F5F4` viền hairline.
+- [x] Hero Empty State: Tiêu đề tracking âm `-0.035em`, 4 thẻ gợi ý nhanh Notion `card-2` (bo góc 12px, viền hairline, icon Link Blue `#097FE8`).
+- [x] Khung nhập liệu nổi (Floating Input Bar): Bo góc 12px, viền hairline `border-black/14`, focus ring 2px `#0075DE`, nút gửi tròn Notion Blue.
+- [x] [CHECK] Kiểm tra tương tác gửi tin, chuyển chế độ RAG, giao diện trên mobile.
 
 ### Giai đoạn 5: Tái cấu trúc Bong bóng Tin nhắn & Nhãn An toàn (MessageItem)
-- [ ] Khắc phục lỗi TypeScript type trong `reportIncident` (`category` field).
-- [ ] Phân định rõ ràng: Tin nhắn User (Notion Blue `#0075DE` bo góc 8px hoặc mực đen/nền Warm Stone) và Trợ lý AI (nền trắng sạch, định dạng `.medical-prose`).
-- [ ] Nhãn an toàn 3 mức chuẩn Notion: Tương thích (Ship Green `#1AAE39`), Thận trọng (Marigold `#FFB110`), Chống chỉ định (Coral Red `#F64932`).
-- [ ] Pill trích dẫn y văn bo tròn màu `#E6F3FE` chữ `#097FE8`.
-- [ ] Nút tác vụ Copy, Report dạng ghost button 4px radius.
-- [ ] [CHECK] Kiểm tra render Markdown y văn, bảng biểu, trích dẫn.
+- [x] Khắc phục lỗi TypeScript type trong `reportIncident` (`category` field).
+- [x] Phân định rõ ràng: Tin nhắn User (Notion Blue `#0075DE` bo góc 8px hoặc mực đen/nền Warm Stone) và Trợ lý AI (nền trắng sạch, định dạng `.medical-prose`).
+- [x] Nhãn an toàn 3 mức chuẩn Notion: Tương thích (Ship Green `#1AAE39`), Thận trọng (Marigold `#FFB110`), Chống chỉ định (Coral Red `#F64932`).
+- [x] Pill trích dẫn y văn bo tròn màu `#E6F3FE` chữ `#097FE8`.
+- [x] Nút tác vụ Copy, Report dạng ghost button 4px radius.
+- [x] [CHECK] Kiểm tra render Markdown y văn, bảng biểu, trích dẫn.
 
 ### Giai đoạn 6: Tái thiết kế Hộp thoại (CitationModal & AuthModal)
-- [ ] `CitationModal.tsx`: Card bo góc 12px, header hairline, đoạn trích y văn font Newsreader serif sang trọng, highlight vàng nhạt `#FEF3C7` viền hổ phách `#FFB110`.
-- [ ] `AuthModal.tsx`: Card 12px, input 8px, nút Google/Email Notion Blue.
-- [ ] [CHECK] Kiểm tra đóng mở modal, responsive mobile, scroll to highlight.
+- [x] `CitationModal.tsx`: Card bo góc 12px, header hairline, đoạn trích y văn font Newsreader serif sang trọng, highlight vàng nhạt `#FEF3C7` viền hổ phách `#FFB110`.
+- [x] `AuthModal.tsx`: Card 12px, input 8px, nút Google/Email Notion Blue.
+- [x] [CHECK] Kiểm tra đóng mở modal, responsive mobile, scroll to highlight.
 
 ### Giai đoạn 7: Cổng Quản Trị & Modal Quản Lý (Admin Portal & Admin Modal)
-- [ ] Rà soát hoàn thiện `AdminPortal.tsx` theo chuẩn Notion Database view.
-- [ ] Tái cấu trúc `AdminModal.tsx` đồng bộ giao diện Notion (12px radius, hairline border, tabs Notion).
-- [ ] [CHECK] Kiểm tra đăng nhập PIN/Key, các tab quản trị người dùng, sự cố, y văn.
+- [x] Rà soát hoàn thiện `AdminPortal.tsx` theo chuẩn Notion Database view.
+- [x] Tái cấu trúc `AdminModal.tsx` đồng bộ giao diện Notion (12px radius, hairline border, tabs Notion).
+- [x] [CHECK] Kiểm tra đăng nhập PIN/Key, các tab quản trị người dùng, sự cố, y văn.
 
 ### Giai đoạn 8: Kiểm thử Build & Nghiệm Thu
-- [ ] Chạy `npm run build` đảm bảo 100% không có lỗi TypeScript hay Vite build.
-- [ ] Đảm bảo đáp ứng tương phản WCAG AA, vùng chạm touch target >= 44px trên thiết bị di động.
-- [ ] Nghiệm thu toàn bộ checklist.
+- [x] Chạy `npm run build` đảm bảo 100% không có lỗi TypeScript hay Vite build.
+- [x] Đảm bảo đáp ứng tương phản WCAG AA, vùng chạm touch target >= 44px trên thiết bị di động.
+- [x] Nghiệm thu toàn bộ checklist.
 
 ---
 
 ## Bảng Checklist Nghiệm Thu
 
-- [ ] **1. Design System Tokens:** Thư mục `design-system/notion/` đầy đủ `MASTER.md`, `tokens.css` và 4 tài liệu `pages/`.
-- [ ] **2. Typography & Baseline:** `index.html` tải Inter và Newsreader; `index.css` thiết lập baseline, scrollbar và `.medical-prose`.
-- [ ] **3. Sidebar Navigation:** Nền Warm Stone `#F6F5F4`, nút Chat Mới Notion Blue, active state, giữ nguyên 3-tap admin.
-- [ ] **4. ChatArea Canvas:** Header 64px under-rule, thẻ gợi ý card-2 bo góc 12px, thanh input nổi focus ring 2px.
-- [ ] **5. MessageItem:** Tin nhắn phân cấp rõ nét, nhãn an toàn Ship Green / Marigold / Coral Red, pill citation xanh nhạt.
-- [ ] **6. CitationModal & AuthModal:** Card 12px, trích dẫn font serif Newsreader, highlight chính xác vị trí.
-- [ ] **7. Admin Portal & Modal:** Bảng Notion Database view, header viết hoa 12px, tag chip màu nhấn.
-- [ ] **8. Build Kiểm Thử:** `npm run build` hoàn thành 0 lỗi.
+- [x] **1. Design System Tokens:** Thư mục `design-system/notion/` đầy đủ `MASTER.md`, `tokens.css` và 4 tài liệu `pages/`.
+- [x] **2. Typography & Baseline:** `index.html` tải Inter và Newsreader; `index.css` thiết lập baseline, scrollbar và `.medical-prose`.
+- [x] **3. Sidebar Navigation:** Nền Warm Stone `#F6F5F4`, nút Chat Mới Notion Blue, active state, giữ nguyên 3-tap admin.
+- [x] **4. ChatArea Canvas:** Header 64px under-rule, thẻ gợi ý card-2 bo góc 12px, thanh input nổi focus ring 2px.
+- [x] **5. MessageItem:** Tin nhắn phân cấp rõ nét, nhãn an toàn Ship Green / Marigold / Coral Red, pill citation xanh nhạt.
+- [x] **6. CitationModal & AuthModal:** Card 12px, trích dẫn font serif Newsreader, highlight chính xác vị trí.
+- [x] **7. Admin Portal & Modal:** Bảng Notion Database view, header viết hoa 12px, tag chip màu nhấn.
+- [x] **8. Build Kiểm Thử:** `npm run build` hoàn thành 0 lỗi.

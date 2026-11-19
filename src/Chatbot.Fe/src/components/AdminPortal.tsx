@@ -549,7 +549,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
     setFeedbackMsg(null);
     try {
       const res = await adminCrawlDocument(crawlUrl.trim(), adminKey);
-      setFeedbackMsg({ text: `Cào dữ liệu thành công! Đã tạo ${res.chunkCount} đoạn vector và đồng bộ lên Qdrant Cloud.`, type: "success" });
+      setFeedbackMsg({ text: `Cào dữ liệu thành công! Đã tạo ${res.document?.chunkCount ?? (res as any).chunkCount ?? 0} đoạn vector và đồng bộ lên Qdrant Cloud.`, type: "success" });
       setCrawlUrl("");
       setInspectionResult(null);
       await loadDocs();
