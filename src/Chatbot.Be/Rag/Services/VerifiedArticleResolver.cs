@@ -38,7 +38,22 @@ public class VerifiedArticleResolver
         ["penicillin"] = ("NBK501237", "30000296", "penicillin-v-potassium", "Penicillin (Penicillin G / Penicillin V)"),
         ["penicillin-v"] = ("NBK501237", "30000296", "penicillin-v-potassium", "Penicillin V"),
         ["penicillin-g"] = ("NBK501236", "30000295", "penicillin-g", "Penicillin G"),
-        ["ampicillin"] = ("NBK500890", "29999949", "ampicillin", "Ampicillin")
+        ["ampicillin"] = ("NBK500890", "29999949", "ampicillin", "Ampicillin"),
+        ["ciprofloxacin"] = ("NBK501004", "30000063", "ciprofloxacin", "Ciprofloxacin"),
+        ["cipro"] = ("NBK501004", "30000063", "ciprofloxacin", "Ciprofloxacin"),
+        ["metronidazole"] = ("NBK501064", "30000123", "metronidazole", "Metronidazole"),
+        ["doxycycline"] = ("NBK500940", "29999999", "doxycycline", "Doxycycline"),
+        ["chlorpheniramine"] = ("NBK501193", "30000252", "chlorpheniramine", "Chlorpheniramine (Clorpheniramin)"),
+        ["clorpheniramin"] = ("NBK501193", "30000252", "chlorpheniramine", "Clorpheniramin (Chlorpheniramine)"),
+        ["betamethasone"] = ("NBK501254", "30000313", "betamethasone", "Betamethasone"),
+        ["estrogen"] = ("NBK501297", "30000356", "estrogens", "Estrogen / Thuốc tránh thai phối hợp"),
+        ["progestin"] = ("NBK501198", "30000257", "progesterone", "Progestin / Thuốc tránh thai chỉ chứa Progestin (POPs)"),
+        ["progesterone"] = ("NBK501198", "30000257", "progesterone", "Progesterone"),
+        ["levonorgestrel"] = ("NBK501272", "30000331", "levonorgestrel", "Levonorgestrel"),
+        ["sibutramine"] = ("NBK501922", "30000450", "sibutramine", "Sibutramine (Hoạt chất giảm cân)"),
+        ["alcohol"] = ("NBK501589", "30000648", "alcohol", "Alcohol / Ethanol (Rượu bia)"),
+        ["ethanol"] = ("NBK501589", "30000648", "alcohol", "Ethanol"),
+        ["lanolin"] = ("NBK501922", "30000500", "lanolin", "Lanolin Y tế tinh khiết")
     };
 
     public VerifiedArticleResolver(HttpClient httpClient)

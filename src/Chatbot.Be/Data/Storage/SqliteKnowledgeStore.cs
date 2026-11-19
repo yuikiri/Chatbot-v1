@@ -475,22 +475,38 @@ public class SqliteKnowledgeStore
         using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
 
-        if (!force)
+        bool needReseed = force;
+        if (!needReseed)
         {
             using var countCmd = conn.CreateCommand();
             countCmd.CommandText = "SELECT COUNT(1) FROM Scenarios;";
             var count = Convert.ToInt64(await countCmd.ExecuteScalarAsync(ct));
-            if (count > 0)
+
+            if (count == 0)
             {
-                return; // Đã có dữ liệu, không cần reseed
+                needReseed = true;
+            }
+            else
+            {
+                // Kiểm tra xem dữ liệu có phải là 15 tình huống cũ (Metformin / Đái tháo đường) hay không
+                using var checkCmd = conn.CreateCommand();
+                checkCmd.CommandText = "SELECT ClaimText FROM Scenarios WHERE Code = 'TH01' LIMIT 1;";
+                var th01Claim = (await checkCmd.ExecuteScalarAsync(ct))?.ToString() ?? string.Empty;
+                if (th01Claim.Contains("Metformin", StringComparison.OrdinalIgnoreCase))
+                {
+                    needReseed = true;
+                }
             }
         }
-        else
+
+        if (!needReseed)
         {
-            using var delCmd = conn.CreateCommand();
-            delCmd.CommandText = "DELETE FROM Scenarios;";
-            await delCmd.ExecuteNonQueryAsync(ct);
+            return; // Đã có dữ liệu chuẩn, không cần reseed
         }
+
+        using var delCmd = conn.CreateCommand();
+        delCmd.CommandText = "DELETE FROM Scenarios;";
+        await delCmd.ExecuteNonQueryAsync(ct);
 
         var defaultScenarios = GetPrompt04SeedData();
         using var trans = conn.BeginTransaction();
@@ -545,11 +561,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th01",
                 Code = "TH01",
-                Title = "Cần tây + dứa thay Metformin trị đái tháo đường",
-                ClaimText = "Uống nước ép cần tây phối hợp dứa và bài thuốc gia truyền có thể thay thế hoàn toàn Metformin, chữa khỏi dứt điểm tiểu đường tuýp 2 sau 14 ngày mà không cần dùng thuốc tây cả đời.",
-                Platform = "TikTok",
-                DoubtSignals = "Khẳng định chữa dứt điểm bệnh mãn tính; kêu gọi bỏ thuốc tây; dùng từ ngữ tuyệt đối hóa ('100%', 'sau 14 ngày'); không có trích dẫn thử nghiệm lâm sàng.",
-                PotentialRisk = "Bệnh nhân tự ý bỏ Metformin dẫn tới tăng đường huyết cấp tính, nguy cơ hôn mê do nhiễm toan ceton hoặc tăng áp lực thẩm thấu, lâu dài thúc đẩy biến chứng võng mạc, suy thận.",
+                Title = "Paracetamol hạ sốt giảm đau",
+                ClaimText = "Tôi đang cho con bú, bị sốt 38.5 độ thì uống Panadol hoặc Hapacol (Paracetamol) có an toàn không? Có cần vắt bỏ sữa 3 ngày không và uống vào thời điểm nào tốt nhất?",
+                Platform = "Hạ sốt & Giảm đau",
+                DoubtSignals = "Chỉ số an toàn RID < 2%, L/P ratio thấp, nồng độ đỉnh trong sữa sau 1-2 giờ; không cần vắt bỏ sữa mẹ.",
+                PotentialRisk = "Tránh uống quá liều 4g/ngày; nên uống ngay sau khi cho con bú xong để giảm nồng độ thuốc trong cữ bú kế tiếp.",
                 DisplayOrder = 1,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -559,11 +575,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th02",
                 Code = "TH02",
-                Title = "Trà thảo mộc giảm 7kg trong 1 tuần (chứa Sibutramine)",
-                ClaimText = "Trà thảo mộc giảm cân nguồn gốc thiên nhiên, cam kết giảm 7kg trong 1 tuần, không cần ăn kiêng hay tập luyện, đào thải mỡ thừa tuyệt đối an toàn cho cả phụ nữ sau sinh.",
-                Platform = "TikTok",
-                DoubtSignals = "Giảm cân quá nhanh (1kg/ngày); không công bố bảng kiểm nghiệm hoạt chất; dấu hiệu che giấu hoạt chất cấm Sibutramine; hiệu ứng hình ảnh dàn dựng.",
-                PotentialRisk = "Độc tính tim mạch nặng nề do Sibutramine (tăng huyết áp kịch phát, rối loạn nhịp thất, đột quỵ); mất nước và rối loạn điện giải nghiêm trọng do thuốc xổ ngụy trang.",
+                Title = "Ibuprofen giảm đau sau sinh",
+                ClaimText = "Tôi bị đau răng và đau vết mổ sau sinh dữ dội, đang cho con bú uống Ibuprofen có được không và có nguy cơ độc tính gì cho bé không?",
+                Platform = "Hạ sốt & Giảm đau",
+                DoubtSignals = "Ibuprofen gắn kết protein huyết tương mẹ > 99%, bài tiết vào sữa với lượng vết (RID < 1%), là NSAID an toàn hàng đầu khi cho con bú.",
+                PotentialRisk = "Chống chỉ định nếu người mẹ có tiền sử loét dạ dày tiến triển; theo dõi trẻ nếu mẹ dùng liều cao kéo dài.",
                 DisplayOrder = 2,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -573,11 +589,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th03",
                 Code = "TH03",
-                Title = "Kem trộn Dexamethasone + Aspirin trị nám cấp tốc sau 3 ngày",
-                ClaimText = "Công thức kem trộn thần thánh chứa Dexamethasone và Aspirin pH8 giúp đánh bay nám mảng, tàn nhang và da trắng mịn không tì vết chỉ sau 3 ngày sử dụng.",
-                Platform = "TikTok",
-                DoubtSignals = "Hiệu quả cấp tốc ('3 ngày'); hướng dẫn tự phối trộn thuốc kê đơn; không cảnh báo chống chỉ định; sử dụng hình ảnh lọc sáng đánh lừa thị giác.",
-                PotentialRisk = "Teo da, rạn da không hồi phục, giãn mao mạch, bùng phát mụn trứng cá ồ ạt, nhiễm trùng da thứ phát, hội chứng Cushing do thuốc khi Corticoid hấp thu toàn thân.",
+                Title = "Amoxicillin trị nhiễm khuẩn",
+                ClaimText = "Tôi bị viêm họng, bác sĩ kê kháng sinh Amoxicillin. Thuốc này có an toàn khi đang cho con bú không, có ảnh hưởng men răng hay hệ tiêu hóa của bé không?",
+                Platform = "Kháng sinh",
+                DoubtSignals = "Nhóm Penicillin/Beta-lactam tương thích cao với cho con bú, không ảnh hưởng men răng như Tetracycline.",
+                PotentialRisk = "Theo dõi trẻ bú mẹ về nguy cơ rối loạn tiêu hóa nhẹ (phân lỏng, tiêu chảy thoáng qua) hoặc tưa lưỡi do thay đổi hệ vi khuẩn.",
                 DisplayOrder = 3,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -587,11 +603,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th04",
                 Code = "TH04",
-                Title = "Tự tiêm truyền tĩnh mạch Glutathione 1200mg tại nhà",
-                ClaimText = "Dịch vụ truyền trắng da tại nhà bằng Glutathione 1200mg kết hợp Vitamin C liều cao, an toàn tuyệt đối, trắng bật tông ngay buổi đầu tiên, thay thế hoàn toàn kem chống nắng.",
-                Platform = "TikTok",
-                DoubtSignals = "Tự ý thực hiện thủ thuật tiêm truyền ngoài cơ sở y tế; thần thánh hóa Glutathione làm trắng da; tuyên bố thay thế kem chống nắng phi khoa học.",
-                PotentialRisk = "Nguy cơ sốc phản vệ gây tử vong ngay lập tức; nhiễm trùng huyết, viêm tắc tĩnh mạch; suy giảm chức năng gan thận do quá tải liều dùng truyền tĩnh mạch không kiểm soát.",
+                Title = "Pseudoephedrine trị cảm cúm",
+                ClaimText = "Tôi đang cho con bú nhưng bị nghẹt mũi sổ mũi cảm cúm, uống thuốc cảm chứa Pseudoephedrine có được không? Thuốc này có làm giảm tiết sữa mẹ không?",
+                Platform = "Hô hấp & Cảm cúm",
+                DoubtSignals = "Pseudoephedrine là chất cường giao cảm làm giảm bài tiết Prolactin, có thể làm giảm 24% thể tích sữa mẹ sau một liều.",
+                PotentialRisk = "Nguy cơ mất sữa cấp tính; trẻ bú mẹ có thể bị bứt rứt, mất ngủ, nhịp tim nhanh. Khuyến cáo dùng nước muối sinh lý xịt mũi tại chỗ thay thế.",
                 DisplayOrder = 4,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -601,11 +617,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th05",
                 Code = "TH05",
-                Title = "Uống Ivermectin liều gấp 5 lần ngừa và diệt virus cúm mùa",
-                ClaimText = "Phác đồ bí mật ngừa và diệt virus cúm mùa, cúm A tại nhà bằng cách uống Ivermectin liều gấp 5 lần kết hợp Hydroxychloroquine và Kẽm, hiệu quả 100% không cần đến bệnh viện.",
-                Platform = "Facebook",
-                DoubtSignals = "Tuyên bố 'phác đồ bí mật bị giấu kín'; khuyên dùng liều gấp nhiều lần hướng dẫn; áp dụng thuốc trị ký sinh trùng cho bệnh do virus; kích động tâm lý chống y tế chính thống.",
-                PotentialRisk = "Độc tính thần kinh nghiêm trọng (co giật, hôn mê, suy nhược thần kinh); kéo dài khoảng QT gây loạn nhịp thất chết người; tổn thương gan cấp và mù lòa do ngộ độc võng mạc.",
+                Title = "Chè vằng & Thảo dược kích sữa",
+                ClaimText = "Sau sinh tôi bị ít sữa, có nên uống cao chè vằng đặc để kích sữa không và uống thế nào để an toàn, không bị mất sữa?",
+                Platform = "Tiết sữa & Sữa mẹ",
+                DoubtSignals = "Uống chè vằng nồng độ quá đặc có thể gây co bóp tử cung mạnh và ức chế phản xạ tiết sữa, gây phản tác dụng làm tiêu sữa.",
+                PotentialRisk = "Khuyến cáo kích sữa bằng biện pháp sinh lý (tăng cữ bú, vắt kiệt sữa, tiếp xúc da kề da, uống đủ 2.5-3 lít nước ấm mỗi ngày).",
                 DisplayOrder = 5,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -615,11 +631,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th06",
                 Code = "TH06",
-                Title = "Uống Paracetamol 500mg mỗi 2 giờ hạ sốt khi sốt xuất huyết",
-                ClaimText = "Trẻ sốt cao 39 độ do sốt xuất huyết cần cho uống xen kẽ Paracetamol 500mg mỗi 2 tiếng một lần để dập sốt nhanh, tránh biến chứng co giật não.",
-                Platform = "Facebook",
-                DoubtSignals = "Sai khoảng cách liều an toàn (chuẩn là 4-6 giờ); liều vượt ngưỡng tối đa cho phép ở trẻ em; không đề cập đến liều lượng theo cân nặng (mg/kg).",
-                PotentialRisk = "Ngộ độc Paracetamol cấp tính dẫn đến hoại tử tế bào gan ồ ạt, suy gan cấp đe dọa tính mạng, đặc biệt nguy hiểm ở bệnh nhân sốt xuất huyết đang có rối loạn đông máu.",
+                Title = "Metronidazole trị nấm phụ khoa",
+                ClaimText = "Tôi bị viêm nấm âm đạo cần uống Metronidazole liều cao 2g, thuốc có bài tiết qua sữa mẹ không và bao lâu sau uống thì cho con bú an toàn?",
+                Platform = "Kháng sinh",
+                DoubtSignals = "Metronidazole bài tiết qua sữa đáng kể (RID 10-15%) và làm sữa mẹ có vị đắng khiến trẻ dễ bỏ bú.",
+                PotentialRisk = "Nếu uống liều cao duy nhất 2g, khuyến cáo tạm ngưng cho con bú và vắt bỏ sữa trong 12 - 24 giờ để thuốc đào thải khỏi cơ thể.",
                 DisplayOrder = 6,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -629,11 +645,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th07",
                 Code = "TH07",
-                Title = "Ngừng Amlodipine khi huyết áp về 120/80 để tránh suy thận",
-                ClaimText = "Khi đo thấy chỉ số huyết áp về 120/80 mmHg thì phải lập tức dừng uống Amlodipine để thận nghỉ ngơi, uống thuốc tây liên tục sẽ gây suy thận và mục xương.",
-                Platform = "Facebook",
-                DoubtSignals = "Hiểu sai bản chất bệnh lý mãn tính; đánh đồng tác dụng kiểm soát với khỏi bệnh; gieo rắc nỗi sợ hãi vô căn cứ về thuốc tây; không hiểu cơ chế huyết áp.",
-                PotentialRisk = "Tăng huyết áp dội ngược kịch phát (Rebound hypertension) dẫn đến vỡ mạch máu não, đột quỵ xuất huyết não, nhồi máu cơ tim cấp hoặc suy tim cấp.",
+                Title = "Kháng histamin trị dị ứng",
+                ClaimText = "Tôi bị dị ứng nổi mề đay ngứa ngáy sau sinh, uống Clorpheniramin được không hay nên đổi sang thuốc kháng histamin an toàn hơn như Loratadine?",
+                Platform = "Dị ứng & Da liễu",
+                DoubtSignals = "Clorpheniramin thế hệ 1 qua hàng rào máu não gây an thần mạnh, có thể ức chế hô hấp và gây buồn ngủ li bì ở trẻ nhỏ.",
+                PotentialRisk = "Ưu tiên lựa chọn kháng histamin thế hệ 2 (Loratadine, Cetirizine) vì ít qua sữa, không gây an thần và không làm giảm tiết sữa.",
                 DisplayOrder = 7,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -643,11 +659,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th08",
                 Code = "TH08",
-                Title = "Lá đu đủ đực và củ sả trị khỏi ung thư phổi giai đoạn 4",
-                ClaimText = "Kỳ tích khỏi hoàn toàn ung thư phổi giai đoạn 4 nhờ bài thuốc uống nước sắc lá đu đủ đực và củ sả tươi, từ bỏ hóa chất độc hại của bệnh viện để sống thọ.",
-                Platform = "Facebook",
-                DoubtSignals = "Cam kết chữa khỏi ung thư giai đoạn muộn; kêu gọi từ bỏ phác đồ điều trị chuẩn của bệnh viện; hình ảnh chứng minh bệnh án không rõ ràng, có dấu hiệu photoshop.",
-                PotentialRisk = "Bệnh nhân đánh mất 'thời gian vàng' điều trị ung thư bằng y học hiện đại; khối u tiến triển xâm lấn di căn mất kiểm soát, dẫn đến suy kiệt và tử vong nhanh chóng.",
+                Title = "Aspirin & Nguy cơ hội chứng Reye",
+                ClaimText = "Tôi bị đau đầu sau sinh, uống 1 viên Aspirin 500mg hạ sốt giảm đau được không hay có nguy cơ hội chứng Reye ở trẻ bú mẹ?",
+                Platform = "Hạ sốt & Giảm đau",
+                DoubtSignals = "Aspirin liều giảm đau hạ sốt (500mg) CHỐNG CHỈ ĐỊNH ở phụ nữ cho con bú do nguy cơ gây hội chứng Reye chết người ở trẻ bú mẹ.",
+                PotentialRisk = "Hội chứng Reye gây suy gan não cấp tính với tỷ lệ tử vong cao; khuyến cáo thay thế hoàn toàn bằng Paracetamol hoặc Ibuprofen.",
                 DisplayOrder = 8,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -657,11 +673,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th09",
                 Code = "TH09",
-                Title = "Sụn vi cá mập nano phục hồi 100% sụn khớp và thoát vị đĩa đệm",
-                ClaimText = "Công nghệ nano siêu phân tử từ sụn vi cá mập giúp tái tạo 100% sụn khớp đã thoái hóa, phục hồi đĩa đệm thoát vị hoàn toàn sau 1 tháng, cam kết không cần phẫu thuật.",
-                Platform = "YouTube",
-                DoubtSignals = "Giả mạo giao diện bản tin thời sự; phóng đại hiệu quả phục hồi thoái hóa sụn khớp; dàn dựng phỏng vấn bệnh nhân giả.",
-                PotentialRisk = "Trì hoãn can thiệp chỉnh hình y khoa dẫn đến teo cơ, biến dạng khớp, dính khớp vĩnh viễn và mất khả năng vận động; tương tác bất lợi với các thuốc tim mạch đang dùng.",
+                Title = "Ciprofloxacin trị viêm tiết niệu",
+                ClaimText = "Tôi bị viêm tiết niệu sau sinh, bác sĩ kê Ciprofloxacin 500mg. Kháng sinh này bài tiết qua sữa mẹ thế nào và có nguy cơ ảnh hưởng sụn khớp của bé không?",
+                Platform = "Kháng sinh",
+                DoubtSignals = "Nhóm Quinolone bài tiết vào sữa mẹ và trên mô hình thực nghiệm có nguy cơ gây thoái hóa mô sụn khớp ở động vật non.",
+                PotentialRisk = "Chỉ dùng khi không có kháng sinh thay thế an toàn hơn; cần theo dõi phân của trẻ và tham vấn bác sĩ đổi sang nhóm Cephalosporin.",
                 DisplayOrder = 9,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -671,11 +687,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th10",
                 Code = "TH10",
-                Title = "Uống nước ion kiềm pH 11.5 trung hòa toàn bộ axit dạ dày",
-                ClaimText = "Uống nước ion kiềm độ pH 11.5 mỗi ngày giúp trung hòa toàn bộ axit trong dạ dày, chữa lành dứt điểm viêm loét trào ngược và kiềm hóa máu ngăn ngừa mọi loại bệnh tật.",
-                Platform = "YouTube",
-                DoubtSignals = "Khái niệm sinh lý học sai lầm nghiêm trọng (độ pH máu được hệ đệm duy trì nghiêm ngặt ở 7.35-7.45); tuyên bố trung hòa toàn bộ axit dạ dày trái ngược với sinh lý tiêu hóa.",
-                PotentialRisk = "Phá hủy hàng rào axit bảo vệ dạ dày dẫn đến nhiễm khuẩn tiêu hóa; kiềm chuyển hóa (Metabolic alkalosis) gây rối loạn điện giải, co giật tetany cơ và tổn thương niêm mạc.",
+                Title = "Thuốc tránh thai an toàn sữa mẹ",
+                ClaimText = "Phụ nữ đang nuôi con bằng sữa mẹ nên dùng thuốc tránh thai loại nào an toàn? Thuốc tránh thai kết hợp chứa Estrogen có làm mất sữa mẹ không?",
+                Platform = "Sức khỏe sinh sản",
+                DoubtSignals = "Estrogen làm giảm đáng kể nồng độ Prolactin, làm giảm thể tích và chất lượng sữa mẹ trong 6 tháng đầu sau sinh.",
+                PotentialRisk = "Phụ nữ nuôi con bằng sữa mẹ nên dùng viên tránh thai chỉ chứa Progestin (POPs) hoặc cấy que tránh thai để không ảnh hưởng nguồn sữa.",
                 DisplayOrder = 10,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -685,11 +701,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th11",
                 Code = "TH11",
-                Title = "Vaccine biến đổi DNA, thụt tháo ruột bằng cà phê để ngừa bệnh",
-                ClaimText = "Vắc-xin chứa kim loại nặng làm biến đổi cấu trúc DNA người, chỉ cần thụt tháo ruột bằng nước cà phê hữu cơ sẽ tống khứ mọi độc tố và ngừa được mọi bệnh lây nhiễm.",
-                Platform = "YouTube",
-                DoubtSignals = "Luận điểm ngụy khoa học đã bị giới y khoa toàn cầu bác bỏ; gieo rắc sự sợ hãi phi lý; khuyến khích phương pháp xâm lấn trực tràng không có chỉ định y học.",
-                PotentialRisk = "Bùng phát các dịch bệnh truyền nhiễm nguy hiểm trong cộng đồng; biến chứng thủng trực tràng, rách niêm mạc đại tràng, nhiễm trùng huyết và mất cân bằng điện giải nặng.",
+                Title = "Trà & Viên giảm cân sau sinh",
+                ClaimText = "Mẹ đang cho con bú có nên uống các loại trà hoặc viên giảm cân sau sinh không? Hoạt chất giảm cân có bài tiết qua sữa gây nguy hiểm cho bé không?",
+                Platform = "Sữa mẹ & Dinh dưỡng",
+                DoubtSignals = "Nhiều sản phẩm giảm cân trôi nổi chứa hoạt chất cấm Sibutramine và thuốc nhuận tràng bài tiết mạnh qua sữa mẹ.",
+                PotentialRisk = "Gây nhịp tim nhanh, tăng huyết áp kịch phát, tiêu chảy cấp mất nước và co giật ở trẻ bú mẹ; tuyệt đối không dùng khi cho con bú.",
                 DisplayOrder = 11,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -699,11 +715,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th12",
                 Code = "TH12",
-                Title = "Uống Amoxicillin + Ciprofloxacin chữa dứt điểm cảm cúm trong 1 ngày",
-                ClaimText = "Kinh nghiệm điều trị cảm cúm dứt điểm sau 1 ngày: Uống kết hợp Amoxicillin 500mg và Ciprofloxacin 500mg ngay khi mới chớm sốt nghẹt mũi để diệt tận gốc mầm bệnh.",
-                Platform = "YouTube",
-                DoubtSignals = "Lạm dụng kháng sinh cho bệnh lý nhiễm virus (cảm cúm do virus, kháng sinh hoàn toàn không có tác dụng); phối hợp kháng sinh vô căn cứ và nguy cơ tạo đề kháng cao.",
-                PotentialRisk = "Thúc đẩy vi khuẩn kháng kháng sinh đa kháng thuốc; rối loạn khuẩn thù ruột gây tiêu chảy do Clostridioides difficile; tác dụng phụ đứt gân gót Achilles do Ciprofloxacin.",
+                Title = "Rượu bia & Phản xạ tiết sữa",
+                ClaimText = "Mẹo dân gian truyền miệng uống bia hoặc rượu nếp trước cữ bú để kích sữa có đúng không? Cồn ảnh hưởng thế nào đến lượng sữa và sức khỏe của trẻ?",
+                Platform = "Tiết sữa & Sữa mẹ",
+                DoubtSignals = "Cồn (Ethanol) ức chế bài tiết Oxytocin làm giảm lượng sữa mẹ thực tế 20%, không hề có tác dụng kích sữa như lời đồn.",
+                PotentialRisk = "Cồn qua sữa mẹ làm trẻ ngủ li bì, ức chế phản xạ bú, chậm phát triển vận động và thần kinh; khuyến cáo kiêng hoàn toàn cồn.",
                 DisplayOrder = 12,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -713,11 +729,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th13",
                 Code = "TH13",
-                Title = "Viên sủi An Đường X ổn định đường huyết dưới 6.0 sau 7 ngày",
-                ClaimText = "Viên sủi An Đường X - Thành tựu thảo dược số 1 thế giới, cam kết hạ và ổn định đường huyết dưới 6.0 sau 7 ngày, dứt điểm tiểu đường không tái phát, không tác dụng phụ.",
-                Platform = "Website bán hàng",
-                DoubtSignals = "Khẳng định khỏi bệnh tiểu đường sau 7 ngày; sử dụng hình ảnh chứng nhận của Bộ Y tế bị chỉnh sửa; dấu hiệu trộn tân dược hạ đường huyết cấm (như Phenformin hoặc Glibenclamide).",
-                PotentialRisk = "Tụt đường huyết đột ngột dẫn tới co giật, tổn thương não không hồi phục và tử vong nếu không cấp cứu kịp; suy thận mạn tính do gánh nặng tạp chất không rõ nguồn gốc.",
+                Title = "Nứt cổ gà & Thuốc bôi núm vú",
+                ClaimText = "Tôi bị nứt cổ gà và đau rát núm ti khi cho con bú, nên bôi thuốc gì an toàn? Có được tự ý bôi kem Corticoid (Betamethasone) lên đầu ngực không?",
+                Platform = "Dị ứng & Da liễu",
+                DoubtSignals = "Trẻ nuốt phải Corticoid hiệu lực mạnh khi ngậm bú có nguy cơ suy thượng thận cấp tính, loét niêm mạc miệng và suy giảm miễn dịch.",
+                PotentialRisk = "Khuyến cáo dùng Lanolin y tế tinh khiết 100% (an toàn không cần lau trước khi bú) và điều chỉnh khớp ngậm đúng của trẻ.",
                 DisplayOrder = 13,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -727,11 +743,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th14",
                 Code = "TH14",
-                Title = "Cao dán nam châm hút sạch tinh thể Urat dứt điểm gout sau 1 đêm",
-                ClaimText = "Cao dán chiết xuất nam châm sinh học hút sạch tinh thể muối Urat qua lỗ chân lông sau 1 đêm, dứt điểm cơn đau gout cấp tính, cam kết ăn nhậu thoải mái không lo tái phát.",
-                Platform = "Website bán hàng",
-                DoubtSignals = "Tuyên bố cơ chế phi lý ('hút tinh thể urat qua da'); dùng từ ngữ giật gân, cam kết ăn uống tự do; không có địa chỉ doanh nghiệp và giấy phép lưu hành sản phẩm.",
-                PotentialRisk = "Loét hoại tử da, bỏng hóa chất và nhiễm trùng mô mềm vùng khớp dán cao; tinh thể Urat tiếp tục lắng đọng phá hủy khớp xương và thận gây suy thận giai đoạn cuối.",
+                Title = "Doxycycline & An toàn men răng",
+                ClaimText = "Tôi bị mụn trứng cá sau sinh, có được uống kháng sinh Doxycycline 100mg kéo dài không, thuốc có ảnh hưởng men răng và xương của trẻ bú mẹ không?",
+                Platform = "Kháng sinh",
+                DoubtSignals = "Nhóm Tetracycline/Doxycycline tạo phức chelat với Canxi lắng đọng vào mầm răng và xương của trẻ sơ sinh.",
+                PotentialRisk = "Dùng kéo dài (> 3 tuần) có nguy cơ làm ố vàng xỉn màu men răng vĩnh viễn và chậm phát triển xương; chống chỉ định dùng kéo dài cho mẹ cho con bú.",
                 DisplayOrder = 14,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -741,11 +757,11 @@ public class SqliteKnowledgeStore
             {
                 Id = "scenario_th15",
                 Code = "TH15",
-                Title = "Siro ho thảo dược cắt cơn hen cấp tính ở trẻ nhỏ sau 5 phút",
-                ClaimText = "Siro ho cao cấp thảo dược cắt dứt điểm cơn co thắt hen phế quản ở trẻ nhỏ sau 5 phút, thay thế hoàn toàn bình xịt Ventolin và máy khí dung độc hại của bệnh viện.",
-                Platform = "Website bán hàng",
-                DoubtSignals = "Tuyên bố thay thế thuốc cấp cứu giãn phế quản; phỉ báng thuốc điều trị chuẩn mực tại bệnh viện; đối tượng mục tiêu là trẻ sơ sinh cực kỳ nhạy cảm và dễ tổn thương.",
-                PotentialRisk = "Trẻ bị ngạt thở cấp do cơn hen phế quản ác tính không được cắt cơn kịp thời bằng thuốc giãn phế quản tác dụng nhanh, dẫn đến suy hô hấp cấp, thiếu oxy não và tử vong.",
+                Title = "Dấu hiệu dị ứng thuốc ở trẻ",
+                ClaimText = "Trẻ sơ sinh bú mẹ nếu có biểu hiện dị ứng thuốc hoặc phát ban khó thở thì cần xử trí cấp cứu ra sao, có được áp dụng mẹo dân gian tại nhà không?",
+                Platform = "Cấp cứu lâm sàng",
+                DoubtSignals = "Dấu hiệu thở rít, tím tái, li bì, phát ban toàn thân là cấp cứu phản vệ tối khẩn cấp, tuyệt đối không vắt chanh hay dùng mẹo dân gian.",
+                PotentialRisk = "Lập tức gọi Cấp cứu 115 hoặc đưa trẻ đến khoa Cấp cứu bệnh viện gần nhất; mang theo toàn bộ thuốc mẹ đang sử dụng để bác sĩ xử trí.",
                 DisplayOrder = 15,
                 IsActive = true,
                 CreatedAtUtc = now,

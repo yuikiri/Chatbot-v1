@@ -82,6 +82,13 @@ export const ScenarioModal: React.FC<Props> = ({
 
   const getPlatformBadgeColor = (platform: string) => {
     const p = platform.toLowerCase();
+    if (p.includes("hạ sốt") || p.includes("giảm đau")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (p.includes("kháng sinh")) return "bg-blue-50 text-blue-700 border-blue-200";
+    if (p.includes("hô hấp") || p.includes("cảm")) return "bg-purple-50 text-purple-700 border-purple-200";
+    if (p.includes("tiết sữa") || p.includes("sữa mẹ")) return "bg-cyan-50 text-cyan-700 border-cyan-200";
+    if (p.includes("dị ứng") || p.includes("da liễu")) return "bg-amber-50 text-amber-700 border-amber-200";
+    if (p.includes("sinh sản") || p.includes("tránh thai")) return "bg-rose-50 text-rose-700 border-rose-200";
+    if (p.includes("cấp cứu")) return "bg-red-50 text-red-700 border-red-200";
     if (p.includes("tiktok")) return "bg-pink-50 text-pink-700 border-pink-200";
     if (p.includes("facebook")) return "bg-blue-50 text-blue-700 border-blue-200";
     if (p.includes("youtube")) return "bg-red-50 text-red-700 border-red-200";
@@ -104,14 +111,14 @@ export const ScenarioModal: React.FC<Props> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-bold text-black tracking-tight">
-                  Bộ Tình Huống Kiểm Chứng Thực Tế
+                  Tình Huống Lâm Sàng Tư Vấn Dùng Thuốc
                 </h3>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#E6F3FE] text-[#0075DE] border border-[#0075DE]/20">
-                  Prompt 04 Data
+                  15 Ca Lâm Sàng
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-black/55">
-                Chọn tình huống thông tin thuốc mạng xã hội để đối soát y văn theo mô hình CRAAP & SIFT
+                Các tình huống thực tế về sử dụng thuốc và chăm sóc nuôi con bằng sữa mẹ để Health Care tư vấn
               </p>
             </div>
           </div>
@@ -231,7 +238,7 @@ export const ScenarioModal: React.FC<Props> = ({
                       <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200/70 text-amber-900 leading-snug">
                         <div className="font-bold flex items-center gap-1.5 mb-1 text-amber-800">
                           <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                          <span>Dấu hiệu nghi ngờ:</span>
+                          <span>Đặc điểm dược lý & Lưu ý:</span>
                         </div>
                         <p className="text-amber-900/80">{item.doubtSignals}</p>
                       </div>
@@ -240,7 +247,7 @@ export const ScenarioModal: React.FC<Props> = ({
                       <div className="p-2.5 rounded-lg bg-red-50/70 border border-red-200/70 text-red-900 leading-snug">
                         <div className="font-bold flex items-center gap-1.5 mb-1 text-red-800">
                           <ShieldAlert className="w-3 h-3 text-red-600 shrink-0" />
-                          <span>Nguy cơ lâm sàng:</span>
+                          <span>Khuyến cáo an toàn lâm sàng:</span>
                         </div>
                         <p className="text-red-900/80">{item.potentialRisk}</p>
                       </div>

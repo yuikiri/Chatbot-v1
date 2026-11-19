@@ -264,7 +264,7 @@ export const ChatArea: React.FC<Props> = ({
               })}
             </div>
 
-            {/* Nút mở 15 Tình huống Prompt 04 */}
+            {/* Nút mở 15 Tình huống Lâm Sàng */}
             <div className="mt-4 max-w-xl mx-auto px-2">
               <button
                 type="button"
@@ -278,14 +278,14 @@ export const ChatArea: React.FC<Props> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-black group-hover:text-[#0075DE] transition-colors">
-                        Tình huống kiểm chứng thực tế (Prompt 04)
+                        Tình huống lâm sàng tư vấn dùng thuốc
                       </span>
                       <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-[#0075DE]/10 text-[#0075DE] border border-[#0075DE]/20">
-                        15 Tình huống
+                        15 Ca lâm sàng
                       </span>
                     </div>
                     <p className="text-[11px] text-black/55 line-clamp-1">
-                      Thuốc giả, tin giật gân trên TikTok, Facebook, YouTube để kiểm chứng theo CRAAP & SIFT
+                      Các ca lâm sàng thực tế về sốt, giảm đau, kháng sinh, dị ứng và tiết sữa ở mẹ cho con bú
                     </p>
                   </div>
                 </div>

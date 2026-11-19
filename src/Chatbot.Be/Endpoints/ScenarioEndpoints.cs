@@ -41,7 +41,7 @@ public static class ScenarioEndpoints
                 return Results.BadRequest(new
                 {
                     success = false,
-                    message = "Tiêu đề và nội dung tuyên bố (ClaimText) không được để trống."
+                    message = "Tiêu đề và nội dung tình huống lâm sàng (ClaimText) không được để trống."
                 });
             }
 
@@ -61,7 +61,7 @@ public static class ScenarioEndpoints
             return Results.Ok(new
             {
                 success = true,
-                message = "Tạo tình huống kiểm chứng thành công.",
+                message = "Tạo tình huống lâm sàng thành công.",
                 data = created
             });
         }).AddEndpointFilter<AdminKeyAuthFilter>();
@@ -123,7 +123,7 @@ public static class ScenarioEndpoints
             });
         }).AddEndpointFilter<AdminKeyAuthFilter>();
 
-        // 6. Reset về danh sách 15 tình huống gốc từ Prompt 04
+        // 6. Reset về danh sách 15 tình huống lâm sàng gốc
         app.MapPost("/api/admin/scenarios/reset-default", async (SqliteKnowledgeStore store, CancellationToken ct) =>
         {
             await store.SeedDefaultScenariosAsync(force: true, ct);
@@ -131,7 +131,7 @@ public static class ScenarioEndpoints
             return Results.Ok(new
             {
                 success = true,
-                message = "Đã khôi phục thành công 15 tình huống nghiên cứu gốc từ Prompt 04.",
+                message = "Đã khôi phục thành công 15 tình huống lâm sàng tư vấn dùng thuốc khi cho con bú.",
                 count = list.Count,
                 data = list
             });

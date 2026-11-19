@@ -41,6 +41,7 @@ public partial class MedicalIntentClassifier
         @"\b(cho\s+con\s+bú|cho\s+con\s+bu|cho\s+bé\s+bú|cho\s+be\s+bu|nuôi\s+con\s+bằng\s+sữa|nuoi\s+con\s+bang\s+sua|bú\s+mẹ|bu\s+me|cữ\s+bú|cu\s+bu|khớp\s+ngậm|khop\s+ngam|ngậm\s+bắt\s+vú|cai\s+sữa|cai\s+sua|dặm\s+sữa|dam\s+sua|bình\s+sữa|binh\s+sua|núm\s+trợ\s+ti)\b|" +
         @"\b(vắt\s+sữa|vat\s+sua|hút\s+sữa|hut\s+sua|máy\s+hút\s+sữa|may\s+hut\s+sua|trữ\s+sữa|tru\s+sua|bảo\s+quản\s+sữa|bao\s+quan\s+sua|rã\s+đông\s+sữa|hâm\s+sữa|ham\s+sua|túi\s+trữ\s+sữa)\b|" +
         @"\b(sau\s+sinh|hậu\s+sản|hau\s+san|ở\s+cữ|o\s+cu|mẹ\s+sau\s+sinh|me\s+sau\s+sinh|phụ\s+nữ\s+sau\s+sinh|phu\s+nu\s+sau\s+sinh|sản\s+phụ|san\s+phu|rạch\s+tầng\s+sinh\s+môn|sinh\s+mổ|sinh\s+mo|sinh\s+thường|sinh\s+thuong|sản\s+dịch|san\s+dich|co\s+hồi\s+tử\s+cung|trầm\s+cảm\s+sau\s+sinh|rụng\s+tóc\s+sau\s+sinh)\b|" +
+        @"\b(thuốc\s+tránh\s+thai|thuoc\s+tranh\s+thai|tránh\s+thai|tranh\s+thai|ngừa\s+thai|ngua\s+thai|que\s+cấy|que\s+cay|đặt\s+vòng|dat\s+vong|giảm\s+cân\s+sau\s+sinh|giam\s+can\s+sau\s+sinh)\b|" +
         @"\b(thực\s+phẩm\s+lợi\s+sữa|ăn\s+gì\s+lợi\s+sữa|an\s+gi\s+loi\s+sua|ăn\s+gì\s+để\s+nhiều\s+sữa|ăn\s+gì\s+mất\s+sữa|an\s+gi\s+mat\s+sua|kiêng\s+gì\s+khi\s+cho\s+con\s+bú|chè\s+vằng|che\s+vang|cỏ\s+cà\s+ri|ngũ\s+cốc\s+lợi\s+sữa|lá\s+đinh\s+lăng|móng\s+giò|mong\s+gio)\b|" +
         @"\b(trẻ\s+bú|tre\s+bu|bé\s+bú|be\s+bu|trẻ\s+sơ\s+sinh|tre\s+so\s+sinh|em\s+bé|em\s+be|bỏ\s+bú|bo\s+bu|bú\s+kém|bu\s+kem|trớ\s+sữa|tro\s+sua|ọc\s+sữa|oc\s+sua|đầy\s+hơi|day\s+hoi|chướng\s+bụng|chuong\s+bung|phân\s+hoa\s+cà|xì\s+xoẹt|vàng\s+da\s+sơ\s+sinh|chậm\s+tăng\s+cân)\b)",
         RegexOptions.Compiled)]
@@ -87,9 +88,19 @@ public partial class MedicalIntentClassifier
         // Corticoid kháng viêm
         "prednisone", "prednisolone", "methylprednisolone", "medrol", "dexamethasone", "dexa", "betamethasone",
 
-        // Dị ứng, cảm cúm, hô hấp
-        "loratadine", "claritin", "cetirizine", "zyrtec", "fexofenadine", "telfast", "chlorpheniramine",
+        // Dị ứng, cảm cúm, hô hấp & Thông mũi
+        "loratadine", "claritin", "cetirizine", "zyrtec", "fexofenadine", "telfast", "chlorpheniramine", "clorpheniramin",
+        "pseudoephedrine", "sudafed", "decolgen", "phenylephrine", "oxymetazoline",
         "dextromethorphan", "bromhexine", "ambroxol", "acetylcysteine", "salbutamol", "ventolin", "albuterol", "montelukast",
+
+        // Sức khỏe sinh sản, tránh thai & Nội tiết
+        "estrogen", "progestin", "progesterone", "levonorgestrel", "desogestrel",
+
+        // Hoạt chất da liễu & bôi núm vú
+        "lanolin",
+
+        // Hoạt chất giảm cân
+        "sibutramine", "phenolphthalein",
 
         // Tiêu hóa & Dạ dày
         "omeprazole", "esomeprazole", "nexium", "pantoprazole", "rabeprazole", "lansoprazole", "ranitidine", "famotidine",

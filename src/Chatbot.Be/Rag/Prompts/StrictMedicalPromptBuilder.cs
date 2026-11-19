@@ -77,16 +77,18 @@ public static class StrictMedicalPromptBuilder
 ### 1. Đánh Giá Mức Độ An Toàn & Tác Dụng Dược Lý
 - **Công dụng & Chỉ định chính:** (Nêu rõ thuốc này thuộc nhóm nào, có tác dụng gì và dùng điều trị bệnh lý gì trong y khoa; giải đáp trực tiếp nếu câu hỏi hỏi về tác dụng/công dụng).
 - **Mức độ an toàn khi cho con bú:** Nêu rõ một trong ba mức: **TƯƠNG THÍCH (AN TOÀN KHI CHO CON BÚ)**, **THẬN TRỌNG (CẦN THEO DÕI TRẺ)**, hoặc **CHỐNG CHỈ ĐỊNH (NGUY CƠ CAO HOẶC LÀM MẤT SỮA)**.
+- **Tác động đến lượng sữa mẹ:** (Nêu rõ thuốc có làm giảm tiết sữa mẹ hoặc ức chế hormone Prolactin/Oxytocin hay không).
 - Tóm tắt lâm sàng ngắn gọn, dễ hiểu trong 1-2 câu để mẹ an tâm.
 
 ### 2. Dược Động Học & Tỷ Lệ Bài Tiết Vào Sữa
-- **Tỷ lệ bài tiết qua sữa:** (Liều trẻ nhận được so với liều mẹ, giải thích rõ nếu dưới ngưỡng an toàn 10%).
+- **Tỷ lệ bài tiết qua sữa:** (Liều trẻ nhận được so với liều mẹ - RID, giải thích rõ nếu dưới ngưỡng an toàn 10%).
 - **Thời gian nồng độ đỉnh trong sữa:** (Khoảng bao lâu sau khi mẹ uống thuốc).
 - **Thời gian bán thải:** (Thời gian cơ thể mẹ đào thải thuốc).
 
 ### 3. Thời Điểm Uống & Hướng Dẫn Sử Dụng
-- Hướng dẫn thời điểm uống an toàn nhất (luôn khuyến cáo uống ngay sau khi cho con bú xong để trước khi đến cữ bú tiếp theo, nồng độ thuốc trong máu và sữa đã kịp giảm xuống thấp).
-- Liều lượng thông thường và tối đa cho phép theo y văn.
+- **Thời điểm uống an toàn nhất:** (Luôn khuyến cáo uống ngay sau khi cho con bú xong để trước khi đến cữ bú tiếp theo, nồng độ thuốc trong máu và sữa đã kịp giảm xuống thấp).
+- **Liều lượng thông thường & Tối đa:** Liều lượng thông thường và tối đa cho phép theo y văn dược học.
+- **Giải pháp thay thế an toàn hơn (nếu có nguy cơ):** Nếu thuốc thuộc nhóm thận trọng hoặc chống chỉ định, gợi ý hoạt chất thay thế cùng nhóm an toàn hơn cho phụ nữ cho con bú.
 
 ### 4. Lưu Ý Quan Trọng & Triệu Chứng Cần Theo Dõi Ở Trẻ
 BẮT BUỘC đặt nội dung lưu ý trong thẻ blockquote Markdown (bắt đầu bằng dấu `>`) để tạo hộp cảnh báo nổi bật:
@@ -331,7 +333,7 @@ QUY TẮC BẮT BUỘC:
     private static string BuildVerifiedLinksSection(IEnumerable<CitationItem>? verifiedArticles, string drug)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Ở cuối câu trả lời, hãy tạo mục \"### Nguồn Y Văn Kiểm Chứng Trực Tiếp\" và đính kèm danh mục các bài viết chuyên luận lâm sàng thực tế sau (giữ nguyên định dạng Markdown Link):");
+        sb.AppendLine("Ở cuối câu trả lời, hãy tạo mục \"### Nguồn Y Văn & Chuyên Luận Tham Chiếu (LactMed® NIH & WHO)\" và đính kèm danh mục các chuyên luận lâm sàng chuẩn sau (giữ nguyên định dạng Markdown Link):");
 
         if (verifiedArticles != null && verifiedArticles.Any())
         {
