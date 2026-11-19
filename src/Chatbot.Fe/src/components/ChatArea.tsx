@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import type { ChatMessage, CitationItem, RagMode } from "../services/api";
 import { useSecretAdmin } from "../hooks/useSecretAdmin";
 import { MessageItem } from "./MessageItem";
+import homeIcon from "../common/favicon/2.jpg";
 import { 
   Send, 
   Menu, 
@@ -213,9 +214,13 @@ export const ChatArea: React.FC<Props> = ({
       <div className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 sm:py-6 space-y-4">
         {messages.length === 0 ? (
           <div className="max-w-2xl mx-auto py-6 sm:py-10 text-center animate-in fade-in duration-300">
-            {/* Minimal Notion icon */}
-            <div className="w-12 h-12 bg-[#F6F5F4] border border-black/8 rounded-xl flex items-center justify-center text-[#0075DE] mb-3 mx-auto shadow-2xs">
-              <ShieldCheck className="w-6 h-6 text-[#0075DE]" />
+            {/* Home Icon */}
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#F6F5F4] border border-black/10 rounded-2xl p-1 mb-3.5 mx-auto shadow-2xs overflow-hidden flex items-center justify-center">
+              <img 
+                src={homeIcon} 
+                alt="LactaMed AI" 
+                className="w-full h-full object-cover rounded-xl select-none"
+              />
             </div>
 
             <h3 className="text-xl sm:text-2xl font-semibold text-black tracking-tight mb-2">

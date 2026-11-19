@@ -74,8 +74,9 @@ public static class StrictMedicalPromptBuilder
     // Định dạng dành cho tra cứu thuốc cụ thể (4 phần dược học lâm sàng)
     public const string DrugOutputStructureGuideline = @"
 ĐỊNH DẠNG CÂU TRẢ LỜI BẮT BUỘC (Trình bày đúng 4 phần sau bằng Markdown rõ ràng, dễ hiểu cho người bệnh):
-### 1. Đánh Giá Mức Độ An Toàn
-- Nêu rõ một trong ba mức: **TƯƠNG THÍCH (AN TOÀN KHI CHO CON BÚ)**, **THẬN TRỌNG (CẦN THEO DÕI TRẺ)**, hoặc **CHỐNG CHỈ ĐỊNH (NGUY CƠ CAO HOẶC LÀM MẤT SỮA)**.
+### 1. Đánh Giá Mức Độ An Toàn & Tác Dụng Dược Lý
+- **Công dụng & Chỉ định chính:** (Nêu rõ thuốc này thuộc nhóm nào, có tác dụng gì và dùng điều trị bệnh lý gì trong y khoa; giải đáp trực tiếp nếu câu hỏi hỏi về tác dụng/công dụng).
+- **Mức độ an toàn khi cho con bú:** Nêu rõ một trong ba mức: **TƯƠNG THÍCH (AN TOÀN KHI CHO CON BÚ)**, **THẬN TRỌNG (CẦN THEO DÕI TRẺ)**, hoặc **CHỐNG CHỈ ĐỊNH (NGUY CƠ CAO HOẶC LÀM MẤT SỮA)**.
 - Tóm tắt lâm sàng ngắn gọn, dễ hiểu trong 1-2 câu để mẹ an tâm.
 
 ### 2. Dược Động Học & Tỷ Lệ Bài Tiết Vào Sữa

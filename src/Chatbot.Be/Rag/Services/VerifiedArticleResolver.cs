@@ -34,7 +34,11 @@ public class VerifiedArticleResolver
         ["azithromycin"] = ("NBK500898", "29999957", "azithromycin", "Azithromycin"),
         ["omeprazole"] = ("NBK501037", "30000096", "omeprazole", "Omeprazole"),
         ["metformin"] = ("NBK501072", "30000131", "metformin", "Metformin"),
-        ["prednisolone"] = ("NBK501062", "30000121", "prednisolone", "Prednisolone")
+        ["prednisolone"] = ("NBK501062", "30000121", "prednisolone", "Prednisolone"),
+        ["penicillin"] = ("NBK501237", "30000296", "penicillin-v-potassium", "Penicillin (Penicillin G / Penicillin V)"),
+        ["penicillin-v"] = ("NBK501237", "30000296", "penicillin-v-potassium", "Penicillin V"),
+        ["penicillin-g"] = ("NBK501236", "30000295", "penicillin-g", "Penicillin G"),
+        ["ampicillin"] = ("NBK500890", "29999949", "ampicillin", "Ampicillin")
     };
 
     public VerifiedArticleResolver(HttpClient httpClient)

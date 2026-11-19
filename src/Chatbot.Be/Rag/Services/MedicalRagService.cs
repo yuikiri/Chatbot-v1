@@ -113,13 +113,20 @@ public class MedicalRagService
         await _searchService.ReloadIndexAsync(ct);
     }
 
+    public static string NormalizeRagMode(string? rawMode)
+    {
+        var m = (rawMode ?? "strict").Trim().ToLowerInvariant();
+        return m switch
+        {
+            "flexible" or "easy" or "de dang" or "dễ dàng" or "mo rong" or "mở rộng" or "quoc te" or "quốc tế" => "flexible",
+            "balanced" or "can bang" or "cân bằng" or "tong hop" or "tổng hợp" => "balanced",
+            _ => "strict"
+        };
+    }
+
     public async Task<RagQueryResult> AskAsync(string userQuery, string mode = "strict", CancellationToken ct = default)
     {
-        mode = (mode ?? "strict").Trim().ToLowerInvariant();
-        if (mode != "balanced" && mode != "flexible")
-        {
-            mode = "strict";
-        }
+        mode = NormalizeRagMode(mode);
 
         if (string.IsNullOrWhiteSpace(userQuery))
         {
@@ -160,7 +167,7 @@ public class MedicalRagService
         string cleanQuery = securityEval.SanitizedQuery;
 
         // TẦNG 1: PHÂN LOẠI Ý ĐỊNH & KIỂM TRA PHẠM VI MIỀN Y TẾ
-        var intentResult = _intentClassifier.Classify(cleanQuery);
+        var intentResult = _intentClassifier.Classify(cleanQuery, mode);
 
         if (intentResult.Intent == QueryIntent.GreetingOrCapabilities)
         {
