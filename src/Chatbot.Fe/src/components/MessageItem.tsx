@@ -7,16 +7,18 @@ import {
   ShieldCheck, 
   Shield, 
   BookOpen, 
-  Globe,
-  ExternalLink,
+  Globe, 
+  ExternalLink, 
   Scale, 
   Sparkles, 
-  AlertTriangle,
-  Flag,
-  Check,
-  Send,
-  X,
-  Loader2
+  AlertTriangle, 
+  Flag, 
+  Check, 
+  Send, 
+  X, 
+  Loader2,
+  Copy,
+  Stethoscope
 } from "lucide-react";
 
 interface Props {
@@ -44,6 +46,14 @@ export const MessageItem: React.FC<Props> = ({
   const [reportNote, setReportNote] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
   const [reportSuccess, setReportSuccess] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!message.content) return;
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const isRefusalContent = (content?: string, isRefusalProp?: boolean): boolean => {
     if (isRefusalProp) return true;
@@ -152,25 +162,37 @@ export const MessageItem: React.FC<Props> = ({
 
     if (level === "Compatible") {
       return (
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold bg-emerald-50/90 text-emerald-950 border border-emerald-300/80 shadow-2xs">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>TƯƠNG THÍCH (AN TOÀN CHO CON BÚ)</span>
+          <span>Tương thích · An toàn khi cho con bú</span>
         </div>
       );
     }
     if (level === "Caution") {
       return (
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold bg-amber-50/90 text-amber-950 border border-amber-300/80 shadow-2xs">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+          </span>
           <Shield className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>THẬN TRỌNG (CẦN THEO DÕI BIỂU HIỆN CỦA TRẺ)</span>
+          <span>Thận trọng · Cần theo dõi biểu hiện trẻ</span>
         </div>
       );
     }
     if (level === "Contraindicated") {
       return (
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-bold bg-rose-50 text-rose-900 border border-rose-300 shadow-2xs">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold bg-rose-50/90 text-rose-950 border border-rose-300/80 shadow-2xs">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+          </span>
           <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>CHỐNG CHỈ ĐỊNH (NGUY CƠ CAO HOẶC LÀM MẤT SỮA)</span>
+          <span>Chống chỉ định · Nguy cơ cao hoặc ức chế tiết sữa</span>
         </div>
       );
     }
@@ -226,37 +248,41 @@ export const MessageItem: React.FC<Props> = ({
   return (
     <div className={`flex w-full ${isUser ? "justify-end" : "justify-start"} mb-4`}>
       <div
-        className={`max-w-[92%] sm:max-w-[80%] rounded-2xl px-4 sm:px-5 py-3.5 sm:py-4 ${
+        className={`max-w-[92%] sm:max-w-[82%] rounded-2xl px-4 sm:px-6 py-3.5 sm:py-4.5 transition-all ${
           isUser
-            ? "bg-teal-600 text-white rounded-br-xs shadow-md"
-            : "bg-white border border-gray-100 text-gray-800 rounded-bl-xs shadow-sm"
+            ? "bg-gradient-to-br from-teal-600 to-teal-700 text-white rounded-br-sm shadow-sm shadow-teal-900/10"
+            : "bg-white border border-slate-200/80 text-slate-800 rounded-bl-sm shadow-subtle"
         }`}
       >
-        {/* Header tin nhắn bot: Nhãn an toàn + Nhãn chế độ */}
+        {/* Header tin nhắn bot: Nhãn thương hiệu + Nhãn an toàn + Nhãn chế độ */}
         {!isUser && (
-          <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/60 flex items-center justify-center">
+                <Stethoscope className="w-3 h-3 text-teal-600" />
+              </div>
+              <span className="text-xs font-bold text-slate-900 tracking-tight">LactaMed AI</span>
+              {renderModeBadge()}
+            </div>
             {renderSafetyBadge(message.safetyLevel)}
-            {renderModeBadge()}
           </div>
         )}
 
         {/* Nội dung Markdown chính có style riêng cho các phần và Hộp lưu ý Callout */}
         <div
-          className={`prose prose-sm max-w-none leading-relaxed ${
-            isUser ? "prose-invert text-white" : "text-gray-800"
-          } [&_h3]:text-teal-950 [&_h3]:font-bold [&_h3]:text-sm [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:pb-1.5 [&_h3]:border-b [&_h3]:border-teal-100/70 [&_blockquote]:bg-amber-50/85 [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:rounded-r-xl [&_blockquote]:my-3.5 [&_blockquote]:not-italic [&_blockquote]:text-amber-950 [&_blockquote_p]:m-0 [&_blockquote_p]:leading-relaxed [&_ul]:my-2 [&_li]:my-0.5 [&_a]:text-teal-700 [&_a]:underline [&_a]:font-semibold hover:[&_a]:text-teal-900`}
+          className={isUser ? "user-prose" : "medical-prose"}
           dangerouslySetInnerHTML={{ __html: parsedHtml }}
         />
 
         {/* Căn cứ trích dẫn: Phân định rõ Tài liệu nội bộ vs Nguồn đối soát quốc tế trực tiếp */}
         {(showInternal || showExternal) && (
-          <div className="mt-4 pt-3 border-t border-gray-100 space-y-3">
+          <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
             {/* Nhóm 1: Chuyên luận cơ sở (Bấm vào mở Pop-up bôi đậm) */}
             {showInternal && (
               <div>
-                <div className="text-xs font-bold text-teal-900 mb-2 flex items-center gap-1.5">
+                <div className="text-xs font-bold text-teal-950 mb-2 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-teal-600" />
-                  <span>Chuyên luận thẩm định cơ sở:</span>
+                  <span>Chuyên luận thẩm định cơ sở (Bấm để xem căn cứ bôi đậm):</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {internalCitations.map((c) => {
@@ -282,12 +308,12 @@ export const MessageItem: React.FC<Props> = ({
                           endOffset: c.endOffset ?? (c as any).EndOffset ?? 0,
                           snippet: c.snippet || (c as any).Snippet || ""
                         })}
-                        className="inline-flex items-center gap-2 text-xs px-3 py-1.5 min-h-[36px] font-medium rounded-xl border bg-teal-50/80 hover:bg-teal-100/90 text-teal-950 border-teal-200 transition shadow-2xs hover:scale-102 cursor-pointer active:scale-95"
+                        className="inline-flex items-center gap-2 text-xs px-3 py-1.5 min-h-[34px] font-medium rounded-xl border bg-teal-50/70 hover:bg-teal-100/80 text-teal-950 border-teal-200/80 transition-all shadow-2xs hover:scale-[1.02] active:scale-95 cursor-pointer"
                         title="Nhấp để xem toàn văn chuyên luận y khoa và đoạn căn cứ được bôi đậm"
                       >
                         <BookOpen className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                         <span className="font-semibold">{cleanTitle}</span>
-                        <span className="text-[10px] bg-teal-200/60 text-teal-800 px-1.5 py-0.2 rounded-md font-mono font-bold">
+                        <span className="text-[10px] bg-teal-200/60 text-teal-900 px-1.5 py-0.2 rounded-md font-mono font-bold">
                           {Math.round(score * 100)}%
                         </span>
                       </button>
@@ -317,7 +343,7 @@ export const MessageItem: React.FC<Props> = ({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 min-h-[36px] font-medium rounded-xl border bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-950 border-indigo-200 transition shadow-2xs hover:scale-102 cursor-pointer no-underline active:scale-95"
+                        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 min-h-[34px] font-medium rounded-xl border bg-indigo-50/70 hover:bg-indigo-100/80 text-indigo-950 border-indigo-200/80 transition-all shadow-2xs hover:scale-[1.02] active:scale-95 cursor-pointer no-underline"
                         title={`Mở trực tiếp bài viết chuyên luận lâm sàng ${cleanTitle} trên tab mới`}
                       >
                         <Globe className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
@@ -334,37 +360,60 @@ export const MessageItem: React.FC<Props> = ({
 
         {/* Hộp Cảnh Báo Y Khoa (Disclaimer Alert Banner) chuyên biệt ở chân tin nhắn */}
         {!isUser && parsedDisclaimerHtml && (
-          <div className="mt-4 p-3 bg-amber-50/90 border border-amber-200/90 rounded-xl text-amber-900 text-xs flex items-start gap-2.5 shadow-2xs">
+          <div className="mt-4 p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div 
-              className="leading-relaxed font-medium prose prose-xs text-amber-900 [&_p]:m-0"
+              className="leading-relaxed font-medium medical-prose text-amber-950 [&_p]:m-0"
               dangerouslySetInnerHTML={{ __html: parsedDisclaimerHtml }}
             />
           </div>
         )}
 
-        {/* Nút Báo lỗi phản hồi & Form gửi Incident */}
+        {/* Action bar: Nút Sao chép & Nút Báo lỗi phản hồi */}
         {!isUser && message.content && (
-          <div className="mt-3 pt-2 flex flex-col items-end border-t border-gray-100/60">
-            {!showReportForm ? (
+          <div className="mt-3.5 pt-2.5 flex flex-col items-end border-t border-slate-100">
+            <div className="flex items-center justify-between w-full">
               <button
-                onClick={() => setShowReportForm(true)}
-                className="text-[11px] text-gray-400 hover:text-red-600 flex items-center gap-1 transition px-2 py-1 rounded-md hover:bg-red-50/60 cursor-pointer"
-                title="Báo cáo câu trả lời sai lệch hoặc thiếu y văn tới Quản trị viên"
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-700 transition px-2 py-1 rounded-md hover:bg-slate-100 cursor-pointer"
+                title="Sao chép nội dung câu trả lời"
               >
-                <Flag className="w-3 h-3" />
-                <span>Báo lỗi câu trả lời</span>
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 text-teal-600" />
+                    <span className="text-teal-700 font-semibold">Đã sao chép</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Sao chép</span>
+                  </>
+                )}
               </button>
-            ) : (
-              <div className="w-full mt-2 p-3 bg-red-50/60 border border-red-200/80 rounded-xl text-left animate-in fade-in duration-150">
+
+              {!showReportForm ? (
+                <button
+                  onClick={() => setShowReportForm(true)}
+                  className="text-[11px] text-slate-400 hover:text-rose-600 flex items-center gap-1 transition px-2 py-1 rounded-md hover:bg-rose-50/60 cursor-pointer"
+                  title="Báo cáo câu trả lời sai lệch hoặc thiếu y văn tới Quản trị viên"
+                >
+                  <Flag className="w-3 h-3" />
+                  <span>Báo lỗi câu trả lời</span>
+                </button>
+              ) : null}
+            </div>
+
+            {/* Form gửi Incident */}
+            {showReportForm && (
+              <div className="w-full mt-2.5 p-3.5 bg-rose-50/50 border border-rose-200/80 rounded-xl text-left animate-in fade-in duration-150 shadow-2xs">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-red-900">
-                    <Flag className="w-3.5 h-3.5 text-red-600" />
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-950">
+                    <Flag className="w-3.5 h-3.5 text-rose-600" />
                     <span>Gửi báo cáo sự cố (Incident Hub)</span>
                   </div>
                   <button
                     onClick={() => setShowReportForm(false)}
-                    className="p-1 text-gray-400 hover:text-gray-600 rounded transition"
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -378,13 +427,13 @@ export const MessageItem: React.FC<Props> = ({
                 ) : (
                   <form onSubmit={handleReportSubmit} className="space-y-2.5">
                     <div>
-                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                         Loại vấn đề gặp phải:
                       </label>
                       <select
                         value={reportErrorType}
                         onChange={(e) => setReportErrorType(e.target.value as any)}
-                        className="w-full text-xs p-1.5 bg-white border border-red-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-400 text-gray-800"
+                        className="w-full text-xs p-2 bg-white border border-rose-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-400 text-slate-800"
                       >
                         <option value="user_reported">Thông tin chưa chuẩn xác / Cần bác sĩ thẩm định</option>
                         <option value="refusal">Mô hình từ chối trả lời vì thiếu y văn</option>
@@ -394,7 +443,7 @@ export const MessageItem: React.FC<Props> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                         Ghi chú chi tiết (tùy chọn):
                       </label>
                       <textarea
@@ -402,7 +451,7 @@ export const MessageItem: React.FC<Props> = ({
                         onChange={(e) => setReportNote(e.target.value)}
                         placeholder="Mô tả cụ thể thông tin sai hoặc tài liệu cần bổ sung..."
                         rows={2}
-                        className="w-full text-xs p-2 bg-white border border-red-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-400 text-gray-800 placeholder-gray-400 resize-none"
+                        className="w-full text-xs p-2.5 bg-white border border-rose-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-400 text-slate-800 placeholder-slate-400 resize-none"
                       />
                     </div>
 
@@ -410,14 +459,14 @@ export const MessageItem: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => setShowReportForm(false)}
-                        className="px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-200/60 rounded-lg transition"
+                        className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-200/60 rounded-lg transition"
                       >
                         Hủy
                       </button>
                       <button
                         type="submit"
                         disabled={submittingReport}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition shadow-2xs disabled:opacity-50 cursor-pointer"
+                        className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition shadow-2xs disabled:opacity-50 cursor-pointer"
                       >
                         {submittingReport ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />

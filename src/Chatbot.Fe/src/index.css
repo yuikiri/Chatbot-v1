@@ -2,19 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
-  height: 100dvh;
-  margin: 0;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent;
-  overflow: hidden;
+@layer base {
+  html, body, #root {
+    height: 100%;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.011em;
+  }
 }
 
 /* Custom sleek medical-grade scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -22,8 +26,9 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.35);
   border-radius: 9999px;
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -34,13 +39,13 @@ html, body, #root {
 .dark ::-webkit-scrollbar-thumb,
 .bg-slate-950 ::-webkit-scrollbar-thumb,
 .bg-slate-900 ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.5);
+  background: rgba(71, 85, 105, 0.45);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover,
 .bg-slate-950 ::-webkit-scrollbar-thumb:hover,
 .bg-slate-900 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.8);
+  background: rgba(148, 163, 184, 0.7);
 }
 
 /* Touch friendly tap target class */
@@ -52,4 +57,175 @@ html, body, #root {
 /* Mobile safe area padding utility */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+
+/* Medical Markdown Typography Enhancements */
+.medical-prose {
+  line-height: 1.68;
+  color: #1e293b;
+  font-size: 0.875rem;
+}
+
+.medical-prose p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.medical-prose h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  letter-spacing: -0.015em;
+}
+
+.medical-prose h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+  margin-top: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.medical-prose ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin-top: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.medical-prose ul > li {
+  position: relative;
+  padding-left: 1.25rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.medical-prose ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.55rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #0d9488;
+}
+
+.medical-prose ol {
+  padding-left: 1.25rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.medical-prose ol > li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.medical-prose strong {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.medical-prose blockquote {
+  position: relative;
+  background: rgba(254, 243, 199, 0.5);
+  border-left: 3px solid #f59e0b;
+  padding: 0.75rem 1rem;
+  border-radius: 0 0.75rem 0.75rem 0;
+  margin: 0.85rem 0;
+  font-style: normal;
+  color: #78350f;
+}
+
+.medical-prose blockquote p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.medical-prose table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0.85rem 0;
+  font-size: 0.8125rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.medical-prose th {
+  background-color: #f8fafc;
+  color: #334155;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.medical-prose td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+.medical-prose tr:last-child td {
+  border-bottom: none;
+}
+
+.medical-prose code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8em;
+  background-color: #f1f5f9;
+  color: #0f766e;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e2e8f0;
+}
+
+/* User Message bubble specific prose */
+.user-prose {
+  color: #ffffff;
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+
+.user-prose p {
+  margin: 0;
+}
+
+/* Animated streaming cursor */
+.typing-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  background-color: #0d9488;
+  margin-left: 4px;
+  vertical-align: middle;
+  border-radius: 2px;
+  animation: cursorBlink 1s infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Citation highlight effect in modal */
+mark#citation-highlight-target {
+  background-color: #fef08a;
+  color: #0f172a;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1.5px solid #eab308;
+  box-shadow: 0 0 0 4px rgba(253, 224, 71, 0.3), 0 2px 4px rgba(0, 0, 0, 0.05);
+  display: inline-block;
+  margin: 0.25rem 0;
+  font-weight: 600;
+  line-height: 1.65;
 }

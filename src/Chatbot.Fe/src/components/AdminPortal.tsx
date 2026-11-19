@@ -76,8 +76,6 @@ interface Props {
 }
 
 export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
-  if (isOpen !== undefined && !isOpen) return null;
-
   // Authentication State
   const [adminKey, setAdminKey] = useState(sessionStorage.getItem("chatbot_admin_key") || "");
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -628,6 +626,8 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
   // =============================================================
   // RENDER: LOCKED VIEW
   // =============================================================
+  if (isOpen !== undefined && !isOpen) return null;
+
   if (!isUnlocked) {
     return (
       <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-4">

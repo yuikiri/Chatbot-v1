@@ -205,76 +205,120 @@ public class MedicalRagService
                 searchHits = await _searchService.SearchAsync(queryVector, topK: RagConstants.DefaultTopK, minScore: RagConstants.DefaultMinRelevanceScore, ct);
             }
 
-            // 2. Đối soát thực thể / từ khóa hoạt chất trong câu hỏi với nội dung Chunk
             var distinctiveKeywords = ExtractDistinctiveKeywords(cleanQuery);
-            string primaryDrug = intentResult.DetectedDrugOrSubstance ?? ExtractPrimaryDrugName(cleanQuery, distinctiveKeywords);
-            string drugCapitalized = char.ToUpperInvariant(primaryDrug[0]) + primaryDrug.Substring(1);
+            bool isLactationCounseling = intentResult.Intent == QueryIntent.LactationCounseling;
+            string? primaryDrug = intentResult.DetectedDrugOrSubstance;
 
-            // Bắt buộc chunk phải chứa tên thuốc (nếu có) hoặc từ khóa dược lý cụ thể
-            var relevantHits = searchHits.Where(h => IsChunkRelevant(h.Chunk, distinctiveKeywords, primaryDrug)).ToList();
+            if (!isLactationCounseling && primaryDrug == null)
+            {
+                primaryDrug = _intentClassifier.DetectDrugName(cleanQuery);
+            }
+
+            // Bắt buộc chunk phải chứa tên thuốc (nếu hỏi thuốc) hoặc chủ đề sữa mẹ (nếu hỏi sữa mẹ)
+            var relevantHits = searchHits.Where(h => IsChunkRelevant(h.Chunk, distinctiveKeywords, primaryDrug, isLactationCounseling)).ToList();
 
             var citations = new List<CitationItem>();
             string systemPrompt = string.Empty;
             string safetyLevel = "None";
 
-            // TẦNG 2: XỬ LÝ THEO 3 CHẾ ĐỘ CO GIÃN
-            if (mode == "strict")
+            // TẦNG 2: XỬ LÝ THEO LOẠI CÂU HỎI & CHẾ ĐỘ RAG
+            if (isLactationCounseling)
             {
-                // CHẾ ĐỘ 1: NGHIÊM NGẶT (100% tài liệu nội bộ cơ sở)
-                if (relevantHits.Count == 0)
+                // NHÁNH 1: TƯ VẤN NUÔI CON BẰNG SỮA MẸ (Thiếu sữa, kích sữa, tắc tia, dinh dưỡng...)
+                if (mode == "strict")
                 {
-                    return new RagQueryResult(
-                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildRefusalForMissingDoc(primaryDrug) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
-                        Citations: new List<CitationItem>(),
-                        SafetyLevel: "None",
-                        IsRefusal: true,
-                        Mode: mode
-                    );
-                }
+                    if (relevantHits.Count == 0)
+                    {
+                        return new RagQueryResult(
+                            Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildStrictLactationTopicRefusal() + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                            Citations: new List<CitationItem>(),
+                            SafetyLevel: "None",
+                            IsRefusal: true,
+                            Mode: mode
+                        );
+                    }
 
-                citations.AddRange(BuildInternalCitations(relevantHits));
-                var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-                systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks, cleanQuery);
-                safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
-            }
-            else if (mode == "balanced")
-            {
-                // CHẾ ĐỘ 2: CÂN BẰNG (Tài liệu nội bộ làm gốc + Bổ trợ y văn kiểm chứng)
-                if (relevantHits.Count == 0)
-                {
-                    return new RagQueryResult(
-                        Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildBalancedNoDocRefusal(primaryDrug) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
-                        Citations: new List<CitationItem>(),
-                        SafetyLevel: "None",
-                        IsRefusal: true,
-                        Mode: mode
-                    );
-                }
-
-                citations.AddRange(BuildInternalCitations(relevantHits));
-                var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-
-                var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
-                citations.AddRange(verifiedArticles);
-
-                systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
-                safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
-            }
-            else // mode == "flexible"
-            {
-                // CHẾ ĐỘ 3: MỞ RỘNG (Nghiên cứu y văn chính thống quốc tế tự do)
-                var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
-                if (relevantChunks.Any())
-                {
                     citations.AddRange(BuildInternalCitations(relevantHits));
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks, cleanQuery, isLactationTopic: true);
+                }
+                else if (mode == "balanced")
+                {
+                    if (relevantHits.Count > 0)
+                    {
+                        citations.AddRange(BuildInternalCitations(relevantHits));
+                    }
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    systemPrompt = StrictMedicalPromptBuilder.BuildBalancedLactationPrompt(relevantChunks, cleanQuery);
+                }
+                else // flexible
+                {
+                    if (relevantHits.Count > 0)
+                    {
+                        citations.AddRange(BuildInternalCitations(relevantHits));
+                    }
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    systemPrompt = StrictMedicalPromptBuilder.BuildFlexibleLactationPrompt(relevantChunks, cleanQuery);
                 }
 
-                // Lấy danh sách bài viết chuyên luận thật đã được đối soát từ NIH / APILAM
-                var verifiedArticles = await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct);
-                citations.AddRange(verifiedArticles);
+                safetyLevel = "None"; // Đối với tư vấn sữa mẹ, không gán nhãn an toàn dược lý
+            }
+            else
+            {
+                // NHÁNH 2: TRA CỨU DƯỢC PHẨM & AN TOÀN THUỐC
+                string drugDisplay = primaryDrug ?? "thuốc";
+                string drugCapitalized = char.ToUpperInvariant(drugDisplay[0]) + drugDisplay.Substring(1);
 
-                systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
-                safetyLevel = relevantChunks.Any() ? StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks) : "Compatible";
+                if (mode == "strict")
+                {
+                    if (relevantHits.Count == 0)
+                    {
+                        return new RagQueryResult(
+                            Stream: ToAsyncEnumerable(StrictMedicalPromptBuilder.BuildRefusalForMissingDoc(drugDisplay) + StrictMedicalPromptBuilder.MandatoryDisclaimer),
+                            Citations: new List<CitationItem>(),
+                            SafetyLevel: "None",
+                            IsRefusal: true,
+                            Mode: mode
+                        );
+                    }
+
+                    citations.AddRange(BuildInternalCitations(relevantHits));
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    systemPrompt = StrictMedicalPromptBuilder.BuildStrictPrompt(relevantChunks, cleanQuery, isLactationTopic: false);
+                    safetyLevel = StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks);
+                }
+                else if (mode == "balanced")
+                {
+                    if (relevantHits.Count > 0)
+                    {
+                        citations.AddRange(BuildInternalCitations(relevantHits));
+                    }
+
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    var verifiedArticles = !string.IsNullOrWhiteSpace(primaryDrug)
+                        ? await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct)
+                        : new List<CitationItem>();
+                    citations.AddRange(verifiedArticles);
+
+                    systemPrompt = StrictMedicalPromptBuilder.BuildBalancedPrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
+                    safetyLevel = relevantChunks.Any() ? StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks) : "Compatible";
+                }
+                else // flexible
+                {
+                    if (relevantHits.Count > 0)
+                    {
+                        citations.AddRange(BuildInternalCitations(relevantHits));
+                    }
+
+                    var relevantChunks = relevantHits.Select(h => h.Chunk).ToList();
+                    var verifiedArticles = !string.IsNullOrWhiteSpace(primaryDrug)
+                        ? await _articleResolver.ResolveVerifiedArticlesAsync(primaryDrug, ct)
+                        : new List<CitationItem>();
+                    citations.AddRange(verifiedArticles);
+
+                    systemPrompt = StrictMedicalPromptBuilder.BuildFlexiblePrompt(relevantChunks, cleanQuery, verifiedArticles, drugCapitalized);
+                    safetyLevel = relevantChunks.Any() ? StrictMedicalPromptBuilder.DetectSafetyLevelFromChunks(relevantChunks) : "Compatible";
+                }
             }
 
             // Gọi streaming từ LLM được bao bọc trong thẻ an toàn
@@ -372,36 +416,43 @@ public class MedicalRagService
         return list;
     }
 
-    private static bool IsChunkRelevant(ChunkEntity chunk, List<string> distinctiveKeywords, string? primaryDrug)
+    private static bool IsChunkRelevant(
+        ChunkEntity chunk, 
+        List<string> distinctiveKeywords, 
+        string? primaryDrug, 
+        bool isLactationCounseling)
     {
         var chunkText = (chunk.DocumentName + " " + chunk.Content).ToLowerInvariant();
 
-        // 1. Nếu xác định được tên thuốc rõ ràng, chunk BẮT BUỘC phải chứa tên thuốc này
-        if (!string.IsNullOrWhiteSpace(primaryDrug) && primaryDrug != "medication")
+        // 1. Nếu là câu hỏi về thuốc cụ thể
+        if (!string.IsNullOrWhiteSpace(primaryDrug) && !primaryDrug.Equals("medication", StringComparison.OrdinalIgnoreCase))
         {
-            if (chunkText.Contains(primaryDrug.ToLowerInvariant()))
-            {
-                return true;
-            }
+            return chunkText.Contains(primaryDrug.ToLowerInvariant());
         }
 
-        // 2. Nếu không có tên thuốc riêng, kiểm tra có ít nhất 1 từ khóa đặc thù khớp trong chunk
+        // 2. Nếu là câu hỏi về nuôi con bằng sữa mẹ / tiết sữa
+        if (isLactationCounseling)
+        {
+            // Tránh gán nhầm các chuyên luận thuốc đơn lẻ (như paracetamol) vào câu hỏi nuôi con bằng sữa mẹ nói chung
+            if (chunk.DocumentName.Contains("paracetamol", StringComparison.OrdinalIgnoreCase) ||
+                chunk.DocumentName.Contains("ibuprofen", StringComparison.OrdinalIgnoreCase) ||
+                chunk.DocumentName.Contains("animal_models", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string[] lactationTerms = new[] { "sữa", "tiết sữa", "kích sữa", "tắc tia", "thiếu sữa", "ít sữa", "mất sữa", "lợi sữa", "cữ bú" };
+            return lactationTerms.Any(term => chunkText.Contains(term));
+        }
+
+        // 3. Nếu là câu hỏi chung, yêu cầu có ít nhất 2 từ khóa đặc thù khớp trong chunk
         if (distinctiveKeywords != null && distinctiveKeywords.Count > 0)
         {
-            return distinctiveKeywords.Any(kw => chunkText.Contains(kw));
+            int matchCount = distinctiveKeywords.Count(kw => chunkText.Contains(kw));
+            return matchCount >= Math.Min(2, distinctiveKeywords.Count);
         }
 
         return false;
-    }
-
-    public static string ExtractPrimaryDrugName(string query, List<string> distinctiveKeywords)
-    {
-        if (distinctiveKeywords != null && distinctiveKeywords.Count > 0)
-        {
-            var candidate = distinctiveKeywords.OrderByDescending(k => k.Length).First();
-            return MedicalIntentClassifier.NormalizeDrugName(candidate);
-        }
-        return "medication";
     }
 
     private static List<CitationItem> BuildInternalCitations(IEnumerable<(ChunkEntity Chunk, float Score)> hits)
