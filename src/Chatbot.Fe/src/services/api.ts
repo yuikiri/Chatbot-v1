@@ -20,6 +20,15 @@ export interface ChatMetadata {
   mode?: RagMode;
 }
 
+export interface AdminReviewInfo {
+  status: 'pending' | 'in_review' | 'resolved';
+  notes?: string;
+  correctedResponse?: string;
+  adminEmail?: string;
+  evaluatedAt?: any;
+  incidentId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -29,6 +38,7 @@ export interface ChatMessage {
   isRefusal?: boolean;
   mode?: RagMode;
   timestamp?: any;
+  adminReview?: AdminReviewInfo;
 }
 
 export interface DocumentInfo {

@@ -82,6 +82,8 @@ export const MessageItem: React.FC<Props> = ({
         userId: currentUser?.uid || "anonymous",
         userEmail: currentUser?.email || undefined,
         conversationId: conversationId || "untracked",
+        messageId: message.id,
+        category: "user_reported",
         userQuery: userPromptText || "Câu hỏi đang xem",
         botResponse: message.content,
         errorType: reportErrorType,
@@ -366,6 +368,59 @@ export const MessageItem: React.FC<Props> = ({
               className="leading-relaxed font-medium medical-prose text-amber-950 [&_p]:m-0"
               dangerouslySetInnerHTML={{ __html: parsedDisclaimerHtml }}
             />
+          </div>
+        )}
+
+        {/* Ý kiến Thẩm Định Y Khoa & Đính Chính từ Bác Sĩ Quản Trị (Hiển thị trực tiếp cho Người Bệnh) */}
+        {!isUser && message.adminReview && (
+          <div className="mt-4 p-4 bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-50 border-2 border-emerald-300/80 rounded-2xl text-slate-800 shadow-sm animate-in fade-in duration-200">
+            <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-emerald-200/70">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-emerald-600 text-white rounded-xl shadow-xs">
+                  <Stethoscope className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                    Ý Kiến Thẩm Định Chuyên Môn từ Bác Sĩ
+                  </h4>
+                  <p className="text-[10px] text-emerald-800/80">
+                    Phản hồi trực tiếp từ Bác sĩ Quản trị lâm sàng
+                  </p>
+                </div>
+              </div>
+
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                message.adminReview.status === "resolved"
+                  ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                  : "bg-amber-100 text-amber-900 border-amber-300"
+              }`}>
+                {message.adminReview.status === "resolved" ? "✓ ĐÃ ĐÍNH CHÍNH" : "ĐANG XEM XÉT"}
+              </span>
+            </div>
+
+            {/* Nội dung câu trả lời đính chính chuẩn y khoa */}
+            {message.adminReview.correctedResponse && (
+              <div className="mb-2.5 p-3 bg-white/90 rounded-xl border border-emerald-200 text-xs leading-relaxed text-slate-800 shadow-2xs">
+                <div className="text-[10px] font-bold text-emerald-800 uppercase mb-1 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Câu trả lời chuẩn y khoa sau thẩm định:</span>
+                </div>
+                <div 
+                  className="prose prose-xs max-w-none text-slate-800 [&_p]:m-0"
+                  dangerouslySetInnerHTML={{
+                    __html: marked.parse(message.adminReview.correctedResponse, { breaks: true }) as string
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Nhận xét / Lời dặn của Bác sĩ */}
+            {message.adminReview.notes && (
+              <div className="p-2.5 bg-emerald-100/60 rounded-xl border border-emerald-200/60 text-xs text-emerald-950">
+                <span className="font-bold text-emerald-900">Lời dặn của Bác sĩ: </span>
+                <span className="italic">"{message.adminReview.notes}"</span>
+              </div>
+            )}
           </div>
         )}
 

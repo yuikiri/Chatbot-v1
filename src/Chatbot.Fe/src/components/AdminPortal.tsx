@@ -30,7 +30,7 @@ import {
   searchUserMessages,
   saveConversationEvaluation,
   subscribeIncidents,
-  updateIncident,
+  updateIncidentAndNotifyMessage,
   formatConversationTime
 } from "../services/firebase";
 import { marked } from "marked";
@@ -65,6 +65,8 @@ import {
   CheckCircle,
   Eye,
   Copy,
+  User,
+  Stethoscope,
   Download,
   ExternalLink,
   X
@@ -114,6 +116,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
   // TAB 2: INCIDENTS HUB STATE
   // -------------------------------------------------------------
   const [incidentsList, setIncidentsList] = useState<IncidentRecord[]>([]);
+  const [incidentCategoryTab, setIncidentCategoryTab] = useState<"all" | "system_detected" | "user_reported">("all");
   const [incidentStatusFilter, setIncidentStatusFilter] = useState<string>("all");
   const [incidentTypeFilter, setIncidentTypeFilter] = useState<string>("all");
   const [selectedIncident, setSelectedIncident] = useState<IncidentRecord | null>(null);
@@ -382,18 +385,23 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
     if (!selectedIncident) return;
     setUpdatingIncident(true);
     try {
-      await updateIncident(selectedIncident.id, {
+      await updateIncidentAndNotifyMessage(selectedIncident, {
         status: newStatus,
         adminNotes: incidentAdminNotes.trim(),
-        correctedResponse: incidentCorrectedResponse.trim()
+        correctedResponse: incidentCorrectedResponse.trim(),
+        adminEmail: "Bác sĩ Quản trị"
       });
       setSelectedIncident(prev => prev ? {
         ...prev,
         status: newStatus,
         adminNotes: incidentAdminNotes.trim(),
-        correctedResponse: incidentCorrectedResponse.trim()
+        correctedResponse: incidentCorrectedResponse.trim(),
+        adminEvaluatedBy: "Bác sĩ Quản trị"
       } : null);
-      setFeedbackMsg({ text: `Đã cập nhật tình trạng sự cố sang "${newStatus}"!`, type: "success" });
+      setFeedbackMsg({ 
+        text: `Đã lưu thẩm định & Đồng bộ phản hồi tới cuộc trò chuyện của người bệnh!`, 
+        type: "success" 
+      });
     } catch (err: any) {
       setFeedbackMsg({ text: err.message || "Cập nhật sự cố thất bại", type: "error" });
     } finally {
@@ -606,6 +614,8 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
   // Pending incidents counter
   const pendingIncidentsCount = incidentsList.filter(i => i.status === "pending").length;
+  const systemIncidentsCount = incidentsList.filter(i => i.category === "system_detected" || (i.errorType && i.errorType !== "user_reported")).length;
+  const userIncidentsCount = incidentsList.filter(i => i.category === "user_reported" || i.errorType === "user_reported").length;
 
   // Filtered Users
   const filteredUsers = usersList.filter(u => {
@@ -618,8 +628,21 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
 
   // Filtered Incidents
   const filteredIncidents = incidentsList.filter(i => {
+    // 1. Phân loại theo Category Header Tab
+    if (incidentCategoryTab === "system_detected") {
+      const isSystem = i.category === "system_detected" || (i.errorType && i.errorType !== "user_reported");
+      if (!isSystem) return false;
+    } else if (incidentCategoryTab === "user_reported") {
+      const isUser = i.category === "user_reported" || i.errorType === "user_reported";
+      if (!isUser) return false;
+    }
+
+    // 2. Lọc theo trạng thái xử lý
     if (incidentStatusFilter !== "all" && i.status !== incidentStatusFilter) return false;
+
+    // 3. Lọc theo loại lỗi
     if (incidentTypeFilter !== "all" && i.errorType !== incidentTypeFilter) return false;
+
     return true;
   });
 
@@ -1477,6 +1500,32 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                                   </div>
                                 </div>
                               )}
+
+                              {/* Ý kiến thẩm định / đính chính của Bác sĩ nếu có */}
+                              {m.adminReview && (
+                                <div className="mt-3 p-2.5 bg-emerald-950/60 border border-emerald-800 rounded-xl text-[11px] text-emerald-300 space-y-1">
+                                  <div className="flex items-center justify-between font-bold text-emerald-400">
+                                    <span className="flex items-center gap-1">
+                                      <Stethoscope className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Ý kiến Bác sĩ Thẩm định:</span>
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-900 text-emerald-200 rounded font-semibold">
+                                      {m.adminReview.status === "resolved" ? "Đã giải quyết" : "Đang xem xét"}
+                                    </span>
+                                  </div>
+                                  {m.adminReview.correctedResponse && (
+                                    <div className="text-white bg-slate-950/60 p-2 rounded-lg border border-emerald-900/40">
+                                      <span className="text-emerald-400 font-semibold block text-[10px] uppercase">Nội dung đính chính:</span>
+                                      <span>{m.adminReview.correctedResponse}</span>
+                                    </div>
+                                  )}
+                                  {m.adminReview.notes && (
+                                    <div className="italic text-emerald-200/90 text-[10px]">
+                                      <span>Nhận xét: "{m.adminReview.notes}"</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -1593,100 +1642,178 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
         {/* TAB 2: INCIDENTS HUB                                         */}
         {/* ============================================================= */}
         {activeTab === "incidents" && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* Cột trái: Bộ lọc & Danh sách sự cố */}
-            <div className={`w-full lg:w-96 border-r border-slate-800 flex-col bg-slate-900/40 shrink-0 ${
-              mobileIncidentView === "list" ? "flex" : "hidden lg:flex"
-            }`}>
-              <div className="p-3 border-b border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                    <span>Nhật ký Sự cố ({filteredIncidents.length})</span>
-                  </h2>
-                </div>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* SUB-HEADER: Phân loại Nguồn Sự cố (Lỗi Hệ Thống Phát Hiện vs Lỗi Người Dùng Báo Cáo) */}
+            <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIncidentCategoryTab("all")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    incidentCategoryTab === "all"
+                      ? "bg-slate-700 text-white shadow-xs"
+                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>Tất Cả ({incidentsList.length})</span>
+                </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Tình trạng:</label>
-                    <select
-                      value={incidentStatusFilter}
-                      onChange={(e) => setIncidentStatusFilter(e.target.value)}
-                      className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
-                    >
-                      <option value="all">Tất cả ({incidentsList.length})</option>
-                      <option value="pending">Chờ xử lý ({incidentsList.filter(i => i.status === "pending").length})</option>
-                      <option value="in_review">Đang xem xét ({incidentsList.filter(i => i.status === "in_review").length})</option>
-                      <option value="resolved">Đã giải quyết ({incidentsList.filter(i => i.status === "resolved").length})</option>
-                    </select>
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => setIncidentCategoryTab("system_detected")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                    incidentCategoryTab === "system_detected"
+                      ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-xs"
+                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5 text-red-400" />
+                  <span>Lỗi Hệ Thống Phát Hiện</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-950 text-red-400 border border-red-800">
+                    {systemIncidentsCount}
+                  </span>
+                </button>
 
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Loại lỗi:</label>
-                    <select
-                      value={incidentTypeFilter}
-                      onChange={(e) => setIncidentTypeFilter(e.target.value)}
-                      className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
-                    >
-                      <option value="all">Tất cả loại lỗi</option>
-                      <option value="user_reported">Người dùng báo lỗi</option>
-                      <option value="refusal">Từ chối do thiếu y văn</option>
-                      <option value="contraindicated_flag">Sai lệch an toàn</option>
-                      <option value="model_timeout">Timeout / Lỗi mạng</option>
-                    </select>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIncidentCategoryTab("user_reported")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer ${
+                    incidentCategoryTab === "user_reported"
+                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-xs"
+                      : "bg-slate-800/60 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Lỗi Người Dùng Báo Cáo</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-teal-950 text-teal-400 border border-teal-800">
+                    {userIncidentsCount}
+                  </span>
+                </button>
               </div>
 
-              {/* Danh sách các Incident Cards */}
-              <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-                {filteredIncidents.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-500">
-                    Không có sự cố nào trong mục lọc này.
-                  </div>
-                ) : (
-                  filteredIncidents.map((inc) => {
-                    const isSelected = selectedIncident?.id === inc.id;
-                    return (
-                      <button
-                        key={inc.id}
-                        onClick={() => handleSelectIncident(inc)}
-                        className={`w-full p-3 text-left transition cursor-pointer ${
-                          isSelected
-                            ? "bg-red-950/40 border-l-2 border-red-500"
-                            : "hover:bg-slate-800/40 text-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                            inc.status === "pending" ? "bg-red-950 text-red-400 border border-red-800" :
-                            inc.status === "in_review" ? "bg-amber-950 text-amber-400 border border-amber-800" :
-                            "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                          }`}>
-                            {inc.status === "pending" ? "Chờ duyệt" : inc.status === "in_review" ? "Đang xử lý" : "Đã sửa"}
-                          </span>
-                          <span className="text-[10px] text-slate-500">
-                            {formatConversationTime(inc.createdAt)}
-                          </span>
-                        </div>
-
-                        <div className="text-xs font-semibold text-white line-clamp-1">
-                          "{inc.userQuery}"
-                        </div>
-                        {inc.errorMessage && (
-                          <div className="text-[11px] text-red-300/80 line-clamp-1 mt-0.5">
-                            Lỗi: {inc.errorMessage}
-                          </div>
-                        )}
-                        <div className="text-[10px] text-slate-400 mt-1">
-                          Người gửi: {inc.userEmail || inc.userId || "Khách"}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
+              {/* Status summary */}
+              <div className="text-xs text-slate-400 hidden sm:flex items-center gap-3">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                  <span>Chờ xử lý: <strong className="text-red-400">{pendingIncidentsCount}</strong></span>
+                </span>
+                <span>•</span>
+                <span>Đã giải quyết: <strong className="text-emerald-400">{incidentsList.filter(i => i.status === "resolved").length}</strong></span>
               </div>
             </div>
+
+            {/* Main Incidents Columns */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Cột trái: Bộ lọc & Danh sách sự cố */}
+              <div className={`w-full lg:w-96 border-r border-slate-800 flex-col bg-slate-900/40 shrink-0 ${
+                mobileIncidentView === "list" ? "flex" : "hidden lg:flex"
+              }`}>
+                <div className="p-3 border-b border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                      <span>Nhật ký Sự cố ({filteredIncidents.length})</span>
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Tình trạng:</label>
+                      <select
+                        value={incidentStatusFilter}
+                        onChange={(e) => setIncidentStatusFilter(e.target.value)}
+                        className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
+                      >
+                        <option value="all">Tất cả ({incidentsList.length})</option>
+                        <option value="pending">Chờ xử lý ({incidentsList.filter(i => i.status === "pending").length})</option>
+                        <option value="in_review">Đang xem xét ({incidentsList.filter(i => i.status === "in_review").length})</option>
+                        <option value="resolved">Đã giải quyết ({incidentsList.filter(i => i.status === "resolved").length})</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Loại lỗi:</label>
+                      <select
+                        value={incidentTypeFilter}
+                        onChange={(e) => setIncidentTypeFilter(e.target.value)}
+                        className="w-full text-xs bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-white focus:outline-none"
+                      >
+                        <option value="all">Tất cả loại lỗi</option>
+                        <option value="user_reported">Người dùng báo lỗi</option>
+                        <option value="refusal">Từ chối do thiếu y văn</option>
+                        <option value="contraindicated_flag">Sai lệch an toàn</option>
+                        <option value="model_timeout">Timeout / Lỗi mạng</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Danh sách các Incident Cards */}
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+                  {filteredIncidents.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-500">
+                      Không có sự cố nào trong mục lọc này.
+                    </div>
+                  ) : (
+                    filteredIncidents.map((inc) => {
+                      const isSelected = selectedIncident?.id === inc.id;
+                      const isUserReport = inc.category === "user_reported" || inc.errorType === "user_reported";
+                      return (
+                        <button
+                          key={inc.id}
+                          onClick={() => handleSelectIncident(inc)}
+                          className={`w-full p-3 text-left transition cursor-pointer ${
+                            isSelected
+                              ? "bg-red-950/40 border-l-2 border-red-500"
+                              : "hover:bg-slate-800/40 text-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                              inc.status === "pending" ? "bg-red-950 text-red-400 border border-red-800" :
+                              inc.status === "in_review" ? "bg-amber-950 text-amber-400 border border-amber-800" :
+                              "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                            }`}>
+                              {inc.status === "pending" ? "Chờ duyệt" : inc.status === "in_review" ? "Đang xử lý" : "Đã sửa"}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              {formatConversationTime(inc.createdAt)}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-semibold text-white line-clamp-1">
+                            "{inc.userQuery}"
+                          </div>
+                          {inc.errorMessage && (
+                            <div className="text-[11px] text-red-300/80 line-clamp-1 mt-0.5">
+                              Lỗi: {inc.errorMessage}
+                            </div>
+                          )}
+                          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                            {isUserReport ? (
+                              <span className="inline-flex items-center gap-1 text-teal-400 font-medium truncate">
+                                <User className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{inc.userEmail || inc.userId || "Khách"}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-400 font-medium">
+                                <Cpu className="w-3 h-3 shrink-0" />
+                                <span>Hệ thống tự động phát hiện</span>
+                              </span>
+                            )}
+                            {inc.correctedResponse && (
+                              <span className="text-[9px] px-1.5 py-0.2 bg-emerald-950/80 text-emerald-400 rounded border border-emerald-800 font-bold">
+                                Đã đính chính
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
 
             {/* Cột phải: Chi tiết Sự cố & Công cụ Sửa lỗi Model */}
             <div className={`flex-1 flex-col overflow-hidden bg-slate-950 ${
@@ -1855,7 +1982,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                         ) : (
                           <Check className="w-3.5 h-3.5" />
                         )}
-                        <span>Lưu Thay Đổi Sự Cố</span>
+                        <span>Lưu Thẩm Định & Đồng Bộ Cho Người Bệnh</span>
                       </button>
                     </div>
                   </div>
@@ -1867,6 +1994,7 @@ export const AdminPortal: React.FC<Props> = ({ isOpen, onBack }) => {
                 </div>
               )}
             </div>
+          </div>
           </div>
         )}
 

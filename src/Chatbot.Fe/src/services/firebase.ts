@@ -175,14 +175,14 @@ export async function hideConversation(userId: string, conversationId: string) {
   });
 }
 
-export async function saveChatMessage(userId: string, conversationId: string, msg: any) {
-  if (!db) return;
+export async function saveChatMessage(userId: string, conversationId: string, msg: any): Promise<string | null> {
+  if (!db) return null;
   const messagesRef = collection(db, "users", userId, "conversations", conversationId, "messages");
   
   const textLen = (msg.content || "").length;
   const estTokens = Math.max(1, Math.round(textLen / 4));
 
-  await addDoc(messagesRef, {
+  const docRef = await addDoc(messagesRef, {
     ...msg,
     estimatedTokens: estTokens,
     timestamp: serverTimestamp()
@@ -204,6 +204,7 @@ export async function saveChatMessage(userId: string, conversationId: string, ms
   } catch (e) {
     console.warn("Lỗi cập nhật token user:", e);
   }
+  return docRef.id;
 }
 
 export function subscribeConversations(userId: string, callback: (list: ConversationItem[]) => void) {
@@ -258,6 +259,27 @@ export async function getConversationMessages(userId: string, conversationId: st
   const msgs: any[] = [];
   snap.forEach(d => msgs.push({ id: d.id, ...d.data() }));
   return msgs;
+}
+
+export function subscribeConversationMessages(
+  userId: string,
+  conversationId: string,
+  callback: (msgs: any[]) => void
+) {
+  if (!db) {
+    callback([]);
+    return () => {};
+  }
+  const messagesRef = collection(db, "users", userId, "conversations", conversationId, "messages");
+  const q = query(messagesRef, orderBy("timestamp", "asc"));
+  return onSnapshot(q, (snapshot) => {
+    const msgs: any[] = [];
+    snapshot.forEach(d => msgs.push({ id: d.id, ...d.data() }));
+    callback(msgs);
+  }, (err) => {
+    console.error("Lỗi lắng nghe tin nhắn realtime:", err);
+    callback([]);
+  });
 }
 
 export interface UserProfile {
@@ -518,25 +540,30 @@ export interface IncidentRecord {
   userId: string;
   userEmail?: string;
   conversationId: string;
+  messageId?: string; // Định danh tin nhắn cụ thể
   userQuery: string;
   botResponse?: string;
-  errorType: 'model_timeout' | 'quota_exceeded' | 'refusal' | 'contraindicated_flag' | 'user_reported';
+  category: 'system_detected' | 'user_reported'; // Phân loại nguồn: Lỗi hệ thống phát hiện vs Lỗi người dùng báo cáo
+  errorType: 'model_timeout' | 'quota_exceeded' | 'refusal' | 'contraindicated_flag' | 'user_reported' | 'system_exception';
   errorMessage?: string;
   status: 'pending' | 'in_review' | 'resolved';
   adminNotes?: string;
   correctedResponse?: string;
+  adminEvaluatedBy?: string;
   createdAt: any;
   resolvedAt?: any;
 }
 
 export async function reportIncident(
-  incident: Omit<IncidentRecord, "id" | "createdAt" | "status">
+  incident: Omit<IncidentRecord, "id" | "createdAt" | "status"> & { category?: 'system_detected' | 'user_reported' }
 ): Promise<string | null> {
   if (!db) return null;
   try {
     const colRef = collection(db, "incidents");
+    const category = incident.category || (incident.errorType === 'user_reported' ? 'user_reported' : 'system_detected');
     const docRef = await addDoc(colRef, {
       ...incident,
+      category,
       status: "pending",
       createdAt: serverTimestamp()
     });
@@ -558,18 +585,22 @@ export function subscribeIncidents(callback: (list: IncidentRecord[]) => void) {
     const list: IncidentRecord[] = [];
     snapshot.forEach(docSnap => {
       const d = docSnap.data();
+      const cat: 'system_detected' | 'user_reported' = d.category || (d.errorType === 'user_reported' ? 'user_reported' : 'system_detected');
       list.push({
         id: docSnap.id,
         userId: d.userId || "",
         userEmail: d.userEmail,
         conversationId: d.conversationId || "",
+        messageId: d.messageId,
         userQuery: d.userQuery || "",
         botResponse: d.botResponse,
+        category: cat,
         errorType: d.errorType || "user_reported",
         errorMessage: d.errorMessage,
         status: d.status || "pending",
         adminNotes: d.adminNotes,
         correctedResponse: d.correctedResponse,
+        adminEvaluatedBy: d.adminEvaluatedBy,
         createdAt: d.createdAt,
         resolvedAt: d.resolvedAt
       });
@@ -589,6 +620,104 @@ export async function updateIncident(incidentId: string, updates: Partial<Incide
     dataToUpdate.resolvedAt = serverTimestamp();
   }
   await updateDoc(docRef, dataToUpdate);
+}
+
+// Cập nhật sự cố và tự động đồng bộ phản hồi / đính chính tới tin nhắn của người dùng
+export async function updateIncidentAndNotifyMessage(
+  incident: IncidentRecord,
+  updates: {
+    status: 'pending' | 'in_review' | 'resolved';
+    adminNotes?: string;
+    correctedResponse?: string;
+    adminEmail?: string;
+  }
+) {
+  if (!db) return;
+
+  // 1. Cập nhật tài liệu trong collection incidents
+  const incidentRef = doc(db, "incidents", incident.id);
+  const dataToUpdate: any = {
+    status: updates.status,
+    adminNotes: updates.adminNotes ?? incident.adminNotes ?? "",
+    correctedResponse: updates.correctedResponse ?? incident.correctedResponse ?? "",
+    adminEvaluatedBy: updates.adminEmail || "Bác sĩ Quản trị"
+  };
+  if (updates.status === "resolved") {
+    dataToUpdate.resolvedAt = serverTimestamp();
+  }
+  await updateDoc(incidentRef, dataToUpdate);
+
+  // 2. Đồng bộ phản hồi trực tiếp vào tin nhắn của user nếu có userId và conversationId
+  if (
+    incident.userId && 
+    incident.userId !== "anonymous" && 
+    incident.conversationId && 
+    incident.conversationId !== "untracked"
+  ) {
+    try {
+      let targetMsgId = incident.messageId;
+
+      // Nếu chưa có messageId, tìm tin nhắn của assistant trong conversation đó
+      if (!targetMsgId) {
+        const messagesRef = collection(db, "users", incident.userId, "conversations", incident.conversationId, "messages");
+        const snap = await getDocs(messagesRef);
+        snap.forEach(d => {
+          const data = d.data();
+          if (data.role === "assistant" && (!targetMsgId || data.content === incident.botResponse)) {
+            targetMsgId = d.id;
+          }
+        });
+      }
+
+      if (targetMsgId) {
+        const msgRef = doc(db, "users", incident.userId, "conversations", incident.conversationId, "messages", targetMsgId);
+        await updateDoc(msgRef, {
+          adminReview: {
+            status: updates.status,
+            notes: updates.adminNotes || "",
+            correctedResponse: updates.correctedResponse || "",
+            evaluatedAt: serverTimestamp(),
+            adminEmail: updates.adminEmail || "Bác sĩ Quản trị",
+            incidentId: incident.id
+          }
+        });
+      }
+
+      // Cập nhật thông tin thẩm định mới nhất vào conversation
+      const convRef = doc(db, "users", incident.userId, "conversations", incident.conversationId);
+      await updateDoc(convRef, {
+        adminNotes: updates.adminNotes || "",
+        evaluatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn("Lỗi đồng bộ phản hồi tới tin nhắn người dùng:", e);
+    }
+  }
+}
+
+// Bác sĩ đánh giá hoặc đính chính trực tiếp tin nhắn từ Tab 1 (Người dùng)
+export async function updateMessageDoctorReview(
+  userId: string,
+  conversationId: string,
+  messageId: string,
+  review: {
+    status: 'pending' | 'in_review' | 'resolved';
+    notes?: string;
+    correctedResponse?: string;
+    adminEmail?: string;
+  }
+) {
+  if (!db) return;
+  const msgRef = doc(db, "users", userId, "conversations", conversationId, "messages", messageId);
+  await updateDoc(msgRef, {
+    adminReview: {
+      status: review.status,
+      notes: review.notes || "",
+      correctedResponse: review.correctedResponse || "",
+      evaluatedAt: serverTimestamp(),
+      adminEmail: review.adminEmail || "Bác sĩ Quản trị"
+    }
+  });
 }
 
 export async function deleteIncident(incidentId: string) {
