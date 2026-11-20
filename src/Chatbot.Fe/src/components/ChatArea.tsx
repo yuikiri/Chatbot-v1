@@ -20,7 +20,8 @@ import {
   Check,
   Stethoscope,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Lock
 } from "lucide-react";
 
 interface Props {
@@ -34,6 +35,8 @@ interface Props {
   currentUser?: any;
   conversationId?: string;
   onOpenAdmin?: () => void;
+  isGuestRestricted?: boolean;
+  onOpenAuth?: () => void;
 }
 
 export const ChatArea: React.FC<Props> = ({
@@ -46,7 +49,9 @@ export const ChatArea: React.FC<Props> = ({
   onModeChange,
   currentUser,
   conversationId,
-  onOpenAdmin
+  onOpenAdmin,
+  isGuestRestricted = false,
+  onOpenAuth
 }) => {
   const [input, setInput] = useState("");
   const [showColdStartHint, setShowColdStartHint] = useState(false);
@@ -89,6 +94,10 @@ export const ChatArea: React.FC<Props> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGuestRestricted) {
+      onOpenAuth?.();
+      return;
+    }
     if (!input.trim() || isStreaming) return;
     onSendMessage(input.trim());
     setInput("");
@@ -240,7 +249,13 @@ export const ChatArea: React.FC<Props> = ({
                 return (
                   <button
                     key={idx}
-                    onClick={() => onSendMessage(q.text)}
+                    onClick={() => {
+                      if (isGuestRestricted) {
+                        onOpenAuth?.();
+                        return;
+                      }
+                      onSendMessage(q.text);
+                    }}
                     className="p-3.5 bg-white hover:bg-[#F6F5F4]/60 hover:border-black/20 border border-black/10 rounded-xl transition text-left group cursor-pointer active:scale-[0.99] flex flex-col justify-between shadow-2xs"
                   >
                     <div>
@@ -349,6 +364,25 @@ export const ChatArea: React.FC<Props> = ({
       {/* Floating Elevated Input Dock */}
       <div className="p-3 sm:p-5 bg-gradient-to-t from-white via-white/95 to-transparent pb-safe shrink-0">
         <div className="max-w-3xl mx-auto space-y-2">
+          {/* Cảnh báo hết lượt câu hỏi dùng thử cho khách vãng lai */}
+          {isGuestRestricted && (
+            <div className="p-3 bg-[#FFFDF5] border border-[#FFB110]/40 rounded-xl flex items-center justify-between gap-3 text-xs shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-2 text-[#78350F]">
+                <Lock className="w-4 h-4 text-[#FFB110] shrink-0" />
+                <span>
+                  Bạn đã dùng hết <strong>1 câu hỏi dùng thử miễn phí</strong>. Đăng nhập để tiếp tục tra cứu và lưu trữ lịch sử tư vấn.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="px-3 py-1.5 bg-[#0075DE] hover:bg-[#005BAB] text-white font-semibold rounded-lg text-xs shadow-2xs transition shrink-0 cursor-pointer"
+              >
+                Đăng nhập ngay
+              </button>
+            </div>
+          )}
+
           {/* Gợi ý chế độ hiện tại */}
           <div className="flex items-center justify-between text-[11px] text-black/50 px-2 font-medium">
             <div className="flex items-center gap-1.5 truncate">
@@ -365,11 +399,23 @@ export const ChatArea: React.FC<Props> = ({
           >
             <input
               type="text"
-              placeholder="Nhập tên thuốc, hoạt chất cần tra cứu an toàn cho mẹ và bé..."
+              placeholder={
+                isGuestRestricted
+                  ? "🔒 Bạn đã dùng hết 1 câu hỏi dùng thử. Bấm để đăng nhập..."
+                  : "Nhập tên thuốc, hoạt chất cần tra cứu an toàn cho mẹ và bé..."
+              }
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onClick={() => {
+                if (isGuestRestricted) {
+                  onOpenAuth?.();
+                }
+              }}
               disabled={isStreaming}
-              className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-transparent text-xs sm:text-sm text-black placeholder-black/35 focus:outline-none disabled:opacity-60"
+              readOnly={isGuestRestricted}
+              className={`flex-1 px-3 sm:px-4 py-2 sm:py-2.5 bg-transparent text-xs sm:text-sm text-black placeholder-black/35 focus:outline-none disabled:opacity-60 ${
+                isGuestRestricted ? "cursor-pointer" : ""
+              }`}
             />
 
             {/* Nút mở nhanh Modal Tình huống */}
@@ -494,11 +540,21 @@ export const ChatArea: React.FC<Props> = ({
             {/* Nút gửi tin nhắn */}
             <button
               type="submit"
-              disabled={!input.trim() || isStreaming}
-              className="p-2 sm:p-2.5 bg-[#0075DE] hover:bg-[#0062BD] active:bg-[#005BAB] disabled:bg-[#F6F5F4] disabled:text-black/30 text-white rounded-lg transition shadow-2xs flex items-center justify-center shrink-0 cursor-pointer disabled:cursor-not-allowed"
-              title="Gửi câu hỏi"
+              disabled={isGuestRestricted ? false : (!input.trim() || isStreaming)}
+              className={`p-2 sm:p-2.5 rounded-lg transition shadow-2xs flex items-center justify-center shrink-0 cursor-pointer ${
+                isGuestRestricted
+                  ? "bg-[#FFB110] hover:bg-[#D97706] text-white"
+                  : "bg-[#0075DE] hover:bg-[#0062BD] active:bg-[#005BAB] disabled:bg-[#F6F5F4] disabled:text-black/30 text-white disabled:cursor-not-allowed"
+              }`}
+              title={isGuestRestricted ? "Đăng nhập để tiếp tục gửi câu hỏi" : "Gửi câu hỏi"}
             >
-              {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {isGuestRestricted ? (
+                <Lock className="w-4 h-4 text-white" />
+              ) : isStreaming ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
             </button>
           </form>
         </div>
@@ -508,8 +564,23 @@ export const ChatArea: React.FC<Props> = ({
       <ScenarioModal
         isOpen={isScenarioModalOpen}
         onClose={() => setIsScenarioModalOpen(false)}
-        onInsertClaim={(text) => setInput(text)}
-        onSelectScenario={(text) => onSendMessage(text)}
+        onInsertClaim={(text) => {
+          if (isGuestRestricted) {
+            setIsScenarioModalOpen(false);
+            onOpenAuth?.();
+            return;
+          }
+          setInput(text);
+        }}
+        onSelectScenario={(text) => {
+          if (isGuestRestricted) {
+            setIsScenarioModalOpen(false);
+            onOpenAuth?.();
+            return;
+          }
+          onSendMessage(text);
+          setIsScenarioModalOpen(false);
+        }}
       />
     </main>
   );

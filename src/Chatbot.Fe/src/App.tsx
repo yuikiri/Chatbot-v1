@@ -51,6 +51,14 @@ export function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isOpenMobile, setIsOpenMobile] = useState(false);
 
+  // Ràng buộc giới hạn: Người dùng chưa đăng nhập chỉ được hỏi đúng 1 câu dùng thử
+  const [guestQueryCount, setGuestQueryCount] = useState<number>(() => {
+    const saved = localStorage.getItem("lactamed_guest_query_count");
+    return saved ? parseInt(saved, 10) || 0 : 0;
+  });
+
+  const isGuestRestricted = !currentUser && guestQueryCount >= 1;
+
   // Theo dõi đăng nhập Firebase
   useEffect(() => {
     const unsubAuth = subscribeAuth((user) => {
@@ -165,6 +173,18 @@ export function App() {
   };
 
   const handleSendMessage = async (text: string) => {
+    // Chặn người dùng vãng lai nếu đã dùng hết 1 câu hỏi miễn phí
+    if (!currentUser && guestQueryCount >= 1) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    if (!currentUser) {
+      const nextCount = guestQueryCount + 1;
+      setGuestQueryCount(nextCount);
+      localStorage.setItem("lactamed_guest_query_count", nextCount.toString());
+    }
+
     const userMsgId = "usr_" + Date.now();
     const assistantMsgId = "bot_" + Date.now();
 
@@ -266,17 +286,27 @@ export function App() {
       },
       (err: any) => {
         setIsStreaming(false);
+        const errMsg = err?.message || "";
+        const isGuestLimit = errMsg.includes("GUEST_LIMIT_EXCEEDED") || errMsg.includes("1 câu hỏi");
+
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
               ? {
                   ...m,
-                  content:
-                    "⚠️ Máy chủ đang khởi động hoặc chưa cấu hình API Key. Vui lòng kiểm tra lại file `.env` hoặc thử lại sau 30 giây."
+                  content: isGuestLimit
+                    ? "🔒 Bạn đã sử dụng hết 1 câu hỏi thử nghiệm miễn phí dành cho khách vãng lai. Vui lòng đăng nhập để tiếp tục tra cứu."
+                    : "⚠️ Máy chủ đang khởi động hoặc chưa cấu hình API Key. Vui lòng kiểm tra lại file `.env` hoặc thử lại sau 30 giây."
                 }
               : m
           )
         );
+
+        if (isGuestLimit) {
+          setIsAuthOpen(true);
+          return;
+        }
+
         console.error(err);
 
         // Tự động ghi nhận sự cố hệ thống
@@ -290,7 +320,8 @@ export function App() {
           errorMessage: `Lỗi kết nối / timeout stream: ${err?.message || "Không có phản hồi từ máy chủ"}`,
           botResponse: "Lỗi kết nối máy chủ"
         }).catch((e) => console.warn("Lỗi tự động ghi nhận system incident:", e));
-      }
+      },
+      currentUser?.uid
     );
   };
 
@@ -326,6 +357,8 @@ export function App() {
         currentUser={currentUser}
         conversationId={activeConvId || undefined}
         onOpenAdmin={() => setCurrentView("admin")}
+        isGuestRestricted={isGuestRestricted}
+        onOpenAuth={() => setIsAuthOpen(true)}
       />
 
       {/* Modal Bôi đậm Đoạn Trích Dẫn Gốc hoặc Nguồn Kiểm Chứng Trực Tuyến */}

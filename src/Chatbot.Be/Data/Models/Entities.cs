@@ -40,7 +40,7 @@ public class CitationItem
     public string? VerifiedOrg { get; set; }
 }
 
-public record ChatRequest(string Message, string? Mode = "strict");
+public record ChatRequest(string Message, string? Mode = "strict", string? UserId = null);
 public record CrawlDocumentRequest(string Url);
 public record UpdateModelConfigRequest(string? Provider, string? Model, string? BaseUrl, string? ApiKey, string? EmbeddingModel);
 

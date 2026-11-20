@@ -123,6 +123,7 @@ builder.Services.AddSingleton<IEmbeddingClient>(sp => sp.GetRequiredService<Dyna
 builder.Services.AddSingleton<VerifiedArticleResolver>();
 builder.Services.AddSingleton<PromptGuardService>();
 builder.Services.AddSingleton<MedicalIntentClassifier>();
+builder.Services.AddSingleton<GuestAccessService>();
 
 builder.Services.AddSingleton<MedicalRagService>(sp =>
     new MedicalRagService(

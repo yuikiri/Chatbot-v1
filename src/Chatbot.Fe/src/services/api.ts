@@ -104,18 +104,33 @@ export async function streamChat(
   onMetadata: (meta: ChatMetadata) => void,
   onToken: (token: string) => void,
   onDone: () => void,
-  onError: (err: any) => void
+  onError: (err: any) => void,
+  userId?: string
 ) {
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (userId) {
+      headers["X-User-Id"] = userId;
+    }
+
     const response = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, mode })
+      headers,
+      body: JSON.stringify({ message, mode, userId })
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(errText || `Lỗi máy chủ (${response.status})`);
+      let errMessage = `Lỗi máy chủ (${response.status})`;
+      try {
+        const errJson = await response.json();
+        if (errJson?.error?.message) {
+          errMessage = errJson.error.message;
+        }
+      } catch {
+        const errText = await response.text();
+        if (errText) errMessage = errText;
+      }
+      throw new Error(errMessage);
     }
 
     if (!response.body) {
